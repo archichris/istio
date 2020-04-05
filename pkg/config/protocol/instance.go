@@ -85,6 +85,9 @@ func Parse(s string) Instance {
 		return Redis
 	case "mysql":
 		return MySQL
+	// for ServiceComb
+	case "highway":
+		return GRPC
 	}
 
 	return Unsupported

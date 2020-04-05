@@ -28,4 +28,6 @@ const (
 	MCP ProviderID = "MCP"
 	// External is a service registry for externally provided ServiceEntries
 	External = "External"
+
+	ServiceComb ProviderID = "ServiceComb"
 )
