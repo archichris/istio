@@ -1,0 +1,14 @@
+{
+    "folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "/home/chris/go/src/github.com/go-chassis/go-chassis"
+		},
+		{
+			"path": "/home/chris/go/src/github.com/archichris/netools"
+		}
+	],
+    "settings": {}
+}

@@ -33,9 +33,7 @@ import (
 
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	"github.com/mitchellh/copystructure"
-
 	authn "istio.io/api/authentication/v1alpha1"
-
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/protocol"

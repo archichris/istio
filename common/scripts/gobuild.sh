@@ -35,6 +35,14 @@ SCRIPTPATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 OUT=${1:?"output path"}
 shift
 
+# GOPATH="/home/chris/go"
+
+# export GOPATH
+
+go get -insecure cloud.google.com/go@v0.50.0
+
+echo "MY:${GOPATH}:${GOROOT}"
+
 set -e
 
 BUILD_GOOS=${GOOS:-linux}

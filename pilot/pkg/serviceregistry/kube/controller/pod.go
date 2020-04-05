@@ -18,14 +18,12 @@ import (
 	"fmt"
 	"sync"
 
+	"istio.io/istio/pilot/pkg/model"
+	"istio.io/istio/pilot/pkg/serviceregistry/kube"
+	"istio.io/pkg/log"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
-
-	"istio.io/pkg/log"
-
-	"istio.io/istio/pilot/pkg/model"
-	"istio.io/istio/pilot/pkg/serviceregistry/kube"
 )
 
 // PodCache is an eventually consistent pod cache
@@ -42,6 +40,16 @@ type PodCache struct {
 	IPByPods map[string]string
 
 	c *Controller
+}
+
+type NetStatus struct {
+	Name      string   `json:"name,omitempty"`
+	Interface string   `json:"interface,omitempty"`
+	IPs       []string `json:"ips,omitempty"`
+	MAC       string   `json:"mac,omitempty"`
+}
+type NetStatuss struct {
+	Status []NetStatus `json:"status,omitempty"`
 }
 
 func newPodCache(informer cache.SharedIndexInformer, c *Controller) *PodCache {

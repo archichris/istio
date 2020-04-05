@@ -19,14 +19,12 @@ import (
 	"strings"
 
 	"github.com/hashicorp/consul/api"
-
-	"istio.io/pkg/log"
-
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/protocol"
+	"istio.io/pkg/log"
 )
 
 const (

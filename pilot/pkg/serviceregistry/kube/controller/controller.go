@@ -15,6 +15,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -25,17 +26,6 @@ import (
 	"time"
 
 	"github.com/yl2chen/cidranger"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
-	listerv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/tools/cache"
-
-	"istio.io/pkg/log"
-	"istio.io/pkg/monitoring"
-
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/util"
 	"istio.io/istio/pilot/pkg/serviceregistry"
@@ -44,6 +34,15 @@ import (
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/queue"
+	"istio.io/pkg/log"
+	"istio.io/pkg/monitoring"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	listerv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 const (
@@ -180,6 +179,9 @@ type Controller struct {
 
 	// Network name for the registry as specified by the MeshNetworks configmap
 	networkForRegistry string
+
+	// multi-netowrk
+	ifNames map[host.Name]string
 }
 
 // NewController creates a new Kubernetes controller
@@ -199,6 +201,8 @@ func NewController(client kubernetes.Interface, options Options) *Controller {
 		externalNameSvcInstanceMap: make(map[host.Name][]*model.ServiceInstance),
 		networksWatcher:            options.NetworksWatcher,
 		metrics:                    options.Metrics,
+		//multi-network
+		ifNames: make(map[host.Name]string),
 	}
 
 	sharedInformers := informers.NewSharedInformerFactoryWithOptions(client, options.ResyncPeriod, informers.WithNamespace(options.WatchedNamespace))
@@ -265,12 +269,20 @@ func (c *Controller) onServiceEvent(curr interface{}, event model.Event) error {
 		c.Lock()
 		delete(c.servicesMap, svcConv.Hostname)
 		delete(c.externalNameSvcInstanceMap, svcConv.Hostname)
+		//multi-network
+		delete(c.ifNames, svcConv.Hostname)
 		c.Unlock()
 		// EDS needs to just know when service is deleted.
 		c.xdsUpdater.SvcUpdate(c.clusterID, svc.Name, svc.Namespace, event)
 	default:
 		// instance conversion is only required when service is added/updated.
 		instances := kube.ExternalNameServiceInstances(*svc, svcConv)
+		//multi-network
+		if inf, ok := svc.Annotations["k8s.v1.cni.cncf.io/interface"]; !ok {
+			c.ifNames[svcConv.Hostname] = "eth0"
+		} else {
+			c.ifNames[svcConv.Hostname] = inf
+		}
 		c.Lock()
 		c.servicesMap[svcConv.Hostname] = svcConv
 		if instances == nil {
@@ -806,6 +818,8 @@ func (c *Controller) updateEDS(ep *v1.Endpoints, event model.Event) {
 
 	c.RLock()
 	svc := c.servicesMap[hostname]
+	//multi-network
+	ifName := c.ifNames[hostname]
 	c.RUnlock()
 	if svc == nil {
 		log.Infof("Handle EDS endpoints: skip updating, service %s/%s has not been populated", ep.Name, ep.Namespace)
@@ -835,10 +849,23 @@ func (c *Controller) updateEDS(ep *v1.Endpoints, event model.Event) {
 
 				builder := NewEndpointBuilder(c, pod)
 
+				//multi-name
+				podIP := ea.IP
+				if status, ok := pod.Annotations["k8s.v1.cni.cncf.io/mynetworks-status"]; ok {
+					statuss := "{\"status\":" + status + " }"
+					netStatuss := &NetStatuss{}
+					json.Unmarshal([]byte(statuss), netStatuss)
+					for _, s := range netStatuss.Status {
+						if ifName == s.Interface {
+							podIP = s.IPs[0]
+						}
+					}
+				}
+
 				// EDS and ServiceEntry use name for service port - ADS will need to
 				// map to numbers.
 				for _, port := range ss.Ports {
-					istioEndpoint := builder.buildIstioEndpoint(ea.IP, port.Port, port.Name)
+					istioEndpoint := builder.buildIstioEndpoint(podIP, port.Port, port.Name)
 					endpoints = append(endpoints, istioEndpoint)
 				}
 			}
