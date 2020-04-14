@@ -50,6 +50,9 @@ const (
 	Redis Instance = "Redis"
 	// MySQL declares that the port carries MySQL traffic.
 	MySQL Instance = "MySQL"
+	//multi-network
+	MAC Instance = "MAC"
+	SDR Instance = "SDR"
 	// Unsupported - value to signify that the protocol is unsupported.
 	Unsupported Instance = "UnsupportedProtocol"
 )
@@ -81,6 +84,11 @@ func Parse(s string) Instance {
 		return Redis
 	case "mysql":
 		return MySQL
+	//multi-network
+	case "sdr":
+		return SDR
+	case "mac":
+		return MAC
 	}
 
 	return Unsupported

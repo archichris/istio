@@ -25,7 +25,8 @@ VERSION ?= 1.5-dev
 BASE_VERSION ?= 1.5-dev.3
 
 export GO111MODULE ?= on
-export GOPROXY ?= https://proxy.golang.org
+# export GOPROXY ?= https://proxy.golang.org
+export GOPROXY ?= http://proxy.golang.org,direct
 export GOSUMDB ?= sum.golang.org
 
 ISTIO_CNI_HUB ?= gcr.io/istio-testing
@@ -38,7 +39,8 @@ DIRS_TO_CLEAN:=
 FILES_TO_CLEAN:=
 
 # If GOPATH is not set by the env, set it to a sane value
-GOPATH ?= $(shell cd ${ISTIO_GO}/../../..; pwd)
+# GOPATH ?= $(shell cd ${ISTIO_GO}/../../..; pwd)
+GOPATH ?= /opt/go
 export GOPATH
 
 # If GOPATH is made up of several paths, use the first one for our targets in this Makefile

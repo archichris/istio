@@ -23,6 +23,9 @@
 
 # This script builds and version stamps the output
 
+echo "GOPATH:${GOPATH};GOROOT:${GOROOT}"
+
+
 VERBOSE=${VERBOSE:-"0"}
 V=""
 if [[ "${VERBOSE}" == "1" ]];then

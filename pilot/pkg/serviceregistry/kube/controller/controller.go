@@ -15,6 +15,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -44,6 +45,7 @@ import (
 	configKube "istio.io/istio/pkg/config/kube"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/mesh"
+	"istio.io/istio/pkg/config/protocol"
 	"istio.io/istio/pkg/queue"
 )
 
@@ -181,6 +183,10 @@ type Controller struct {
 
 	// Network name for the registry as specified by the MeshNetworks configmap
 	networkForRegistry string
+
+	// multi-netowrk
+	ifNames map[host.Name]string
+	// proto   map[host.Name]string
 }
 
 // NewController creates a new Kubernetes controller
@@ -200,6 +206,9 @@ func NewController(client kubernetes.Interface, options Options) *Controller {
 		externalNameSvcInstanceMap: make(map[host.Name][]*model.ServiceInstance),
 		networksWatcher:            options.NetworksWatcher,
 		metrics:                    options.Metrics,
+		//multi-network
+		ifNames: make(map[host.Name]string),
+		// proto:   make(map[host.Name]string),
 	}
 
 	sharedInformers := informers.NewSharedInformerFactoryWithOptions(client, options.ResyncPeriod, informers.WithNamespace(options.WatchedNamespace))
@@ -266,12 +275,27 @@ func (c *Controller) onServiceEvent(curr interface{}, event model.Event) error {
 		c.Lock()
 		delete(c.servicesMap, svcConv.Hostname)
 		delete(c.externalNameSvcInstanceMap, svcConv.Hostname)
+		//multi-network
+		delete(c.ifNames, svcConv.Hostname)
+		// delete(c.proto, svcConv.Hostname)
 		c.Unlock()
 		// EDS needs to just know when service is deleted.
 		c.xdsUpdater.SvcUpdate(c.clusterID, svc.Name, svc.Namespace, event)
 	default:
 		// instance conversion is only required when service is added/updated.
 		instances := kube.ExternalNameServiceInstances(*svc, svcConv)
+		//multi-network
+		if inf, ok := svc.Annotations["k8s.v1.cni.cncf.io/interface"]; !ok {
+			c.ifNames[svcConv.Hostname] = "eth0"
+		} else {
+			c.ifNames[svcConv.Hostname] = inf
+		}
+		// if p, ok := svc.Annotations["k8s.v1.cni.cncf.io/proto"]; !ok {
+		// 	c.ifNames[svcConv.Hostname] = "ip"
+		// } else {
+		// 	c.ifNames[svcConv.Hostname] = p
+		// }
+
 		c.Lock()
 		c.servicesMap[svcConv.Hostname] = svcConv
 		if instances == nil {
@@ -683,6 +707,31 @@ func (c *Controller) getProxyServiceInstancesByPod(pod *v1.Pod, service *v1.Serv
 		return out
 	}
 
+	// multi-network
+	// for k, v := range pod.Annotations {
+	// 	log.Info("[multi] Annotations[" + k + "] " + v)
+	// }
+	ifName := c.ifNames[hostname]
+	// p := c.proto[hostname]
+	mac := "00:00:00:00:00:00"
+	ip := proxy.IPAddresses[0]
+	if status, ok := pod.Annotations["k8s.v1.cni.cncf.io/mynetworks-status"]; ok {
+		statuss := "{\"status\":" + status + " }"
+		// log.Info("[multi] statuss:" + strings.ReplaceAll(statuss, "\n", " "))
+		netStatuss := &NetStatuss{}
+		err := json.Unmarshal([]byte(statuss), netStatuss)
+		if err != nil {
+			log.Errorf("[multi]Unmarshal failed" + err.Error())
+		} else {
+			for _, s := range netStatuss.Status {
+				if ifName == s.Interface {
+					ip = s.IPs[0]
+					mac = s.MAC
+				}
+			}
+		}
+	}
+
 	podIP := proxy.IPAddresses[0]
 	for _, port := range service.Spec.Ports {
 		svcPort, exists := svc.Ports.Get(port.Name)
@@ -696,10 +745,14 @@ func (c *Controller) getProxyServiceInstancesByPod(pod *v1.Pod, service *v1.Serv
 			continue
 		}
 
-		// consider multiple IP scenarios
-		for _, ip := range proxy.IPAddresses {
-			out = append(out, c.getEndpoints(podIP, ip, int32(portNum), svcPort, svc))
+		// multi-network
+		if svcPort.Protocol == protocol.MAC {
+			ip = mac
 		}
+		// consider multiple IP scenarios
+		// for _, ip := range proxy.IPAddresses {
+		out = append(out, c.getEndpoints(podIP, ip, int32(portNum), svcPort, svc))
+		// }
 	}
 
 	return out
@@ -725,6 +778,10 @@ func (c *Controller) getEndpoints(podIP, address string, endpointPort int32, svc
 		sa = kube.SecureNamingSAN(pod)
 		uid = createUID(pod.Name, pod.Namespace)
 	}
+
+	//multi-network
+	log.Infof("[multis] Add ep: svc:%s[%s]->end:%s-%s:%s[%d]", svc.Hostname, svc.Address, podIP, address, svcPort.Protocol, endpointPort)
+
 	return &model.ServiceInstance{
 		Service:     svc,
 		ServicePort: svcPort,
@@ -795,6 +852,9 @@ func (c *Controller) AppendInstanceHandler(func(*model.ServiceInstance, model.Ev
 func (c *Controller) updateEDS(ep *v1.Endpoints, event model.Event) {
 	hostname := kube.ServiceHostname(ep.Name, ep.Namespace, c.domainSuffix)
 
+	//multi-network
+	ifName := c.ifNames[hostname]
+	// p := c.proto[hostname]
 	endpoints := make([]*model.IstioEndpoint, 0)
 	if event != model.EventDelete {
 		for _, ss := range ep.Subsets {
@@ -828,11 +888,50 @@ func (c *Controller) updateEDS(ep *v1.Endpoints, event model.Event) {
 
 				tlsMode := kube.PodTLSMode(pod)
 
+				//multi-network
+				podIP := ea.IP
+				mac := "00:00:00:00:00:00"
+				// if pod == nil {
+				// 	log.Errorf("[multi] pod is nil")
+				// } else {
+				// 	log.Info("[multi] pod name:" + pod.Name)
+				// }
+				if pod != nil && pod.Annotations != nil {
+					// for k, v := range pod.Annotations {
+					// 	log.Info("[multi] Annotations[" + k + "] " + v)
+					// }
+					if status, ok := pod.Annotations["k8s.v1.cni.cncf.io/mynetworks-status"]; ok {
+						statuss := "{\"status\":" + status + " }"
+						// log.Info("[multi] statuss:" + strings.ReplaceAll(statuss, "\n", " "))
+						netStatuss := &NetStatuss{}
+						err := json.Unmarshal([]byte(statuss), netStatuss)
+						if err != nil {
+							log.Errorf("[multi]Unmarshal failed" + err.Error())
+						} else {
+							for _, s := range netStatuss.Status {
+								// log.Info("[multi] ifName:" + ifName + " If:" + s.Interface)
+								if ifName == s.Interface {
+									mac = s.MAC
+									podIP = s.IPs[0]
+									// log.Info("[multi] " + ea.IP + " > " + podIP + ":" + mac)
+								}
+							}
+						}
+					}
+				}
+
 				// EDS and ServiceEntry use name for service port - ADS will need to
 				// map to numbers.
+				//multi-network
+				if c.servicesMap[hostname].Ports != nil && c.servicesMap[hostname].Ports[0].Protocol == protocol.MAC {
+					podIP = mac
+				}
+
+				log.Infof("[multi] updateEDS svc:%s, ip:%s, podip:%s, proto:%s", hostname, ea.IP, podIP, c.servicesMap[hostname].Ports[0].Protocol)
+
 				for _, port := range ss.Ports {
 					endpoints = append(endpoints, &model.IstioEndpoint{
-						Address:         ea.IP,
+						Address:         podIP,
 						EndpointPort:    uint32(port.Port),
 						ServicePortName: port.Name,
 						Labels:          labelMap,

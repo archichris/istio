@@ -46,6 +46,16 @@ type PodCache struct {
 	c *Controller
 }
 
+type NetStatus struct {
+	Name      string   `json:"name,omitempty"`
+	Interface string   `json:"interface,omitempty"`
+	IPs       []string `json:"ips,omitempty"`
+	MAC       string   `json:"mac,omitempty"`
+}
+type NetStatuss struct {
+	Status []NetStatus `json:"status,omitempty"`
+}
+
 func newPodCache(informer cache.SharedIndexInformer, c *Controller) *PodCache {
 	out := &PodCache{
 		informer: informer,
