@@ -26,6 +26,8 @@ const (
 	Consul ProviderID = "Consul"
 	// MCP is a service registry backed by MCP ServiceEntries
 	MCP ProviderID = "MCP"
+	// Comb is a service registry backed by ServiceComb ServiceEntries
+	Comb ProviderID = "ServiceComb"
 	// External is a service registry for externally provided ServiceEntries
 	External = "External"
 )
