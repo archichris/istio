@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	"github.com/go-chassis/go-chassis/core/registry"
+	client "github.com/go-chassis/go-chassis/pkg/scclient"
+	"github.com/go-chassis/go-chassis/pkg/scclient/proto"
 	"github.com/mohae/deepcopy"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
@@ -41,13 +43,13 @@ const (
 func parseEndpoint(endpoint string) (addr, port string, ssl bool) {
 	parts := strings.Split(endpoint, ":")
 	addr = parts[0]
-	parts = strings.Split(parts[1], "?")
-	port = parts[0]
 	if strings.Index(parts[1], "sslEnabled=true") >= 0 {
 		ssl = true
 	} else {
 		ssl = false
 	}
+	parts = strings.Split(parts[1], "?")
+	port = parts[0]
 	return
 }
 
@@ -69,31 +71,25 @@ func convertPort(endpointsMap map[string]string) []model.Port {
 	return ports
 }
 
-func getPlaneEpsMap(instance *registry.MicroServiceInstance) map[string]map[string]string {
+func getPlaneEpsMap(instance *proto.MicroServiceInstance) map[string]map[string]string {
 	pepsMap := make(map[string]map[string]string)
-	pepsMap[defaultPlaneName] = deepcopy.Copy(instance.EndpointsMap).(map[string]string)
-	for k, v := range instance.Metadata {
+	m, _ := registry.GetProtocolMap(instance.Endpoints)
+	pepsMap[defaultPlaneName] = m
+	for k, v := range instance.Properties {
 		if strings.HasPrefix(k, extPlanePrefix) {
 			n := strings.TrimPrefix(k, extPlanePrefix)
-			epsStr := strings.Split(v, extEpSep)
-			if len(epsStr) == 0 {
+			eps := strings.Split(v, extEpSep)
+			if len(eps) == 0 {
 				continue
 			}
-			epsMap := make(map[string]string)
-			for _, ep := range epsStr {
-				s := strings.Split(ep, extProtoAddrSep)
-				if len(s) != 2 {
-					continue
-				}
-				epsMap[s[0]] = s[1]
-			}
-			pepsMap[n] = epsMap
+			m, _ = registry.GetProtocolMap(eps)
+			pepsMap[n] = m
 		}
 	}
 	return pepsMap
 }
 
-func convertService(service *registry.MicroService, instances []*registry.MicroServiceInstance) []*model.Service {
+func convertService(service *proto.MicroService, instances []*proto.MicroServiceInstance) []*model.Service {
 
 	name := service.ServiceName
 
@@ -128,7 +124,7 @@ func convertService(service *registry.MicroService, instances []*registry.MicroS
 			Attributes: model.ServiceAttributes{
 				ServiceRegistry: string(serviceregistry.Comb),
 				Name:            string(hn),
-				Namespace:       service.AppID,
+				Namespace:       "default",
 			},
 		})
 	}
@@ -136,25 +132,21 @@ func convertService(service *registry.MicroService, instances []*registry.MicroS
 	return svcs
 }
 
-type dataCenterInfo struct {
-	Name          string `json:"name"`
-	Region        string `json:"region"`
-	AvailableZone string `json:"az"`
-}
+// type dataCenterInfo struct {
+// 	Name          string `json:"name"`
+// 	Region        string `json:"region"`
+// 	AvailableZone string `json:"az"`
+// }
 
-func convertInstance(service *model.Service, instance *registry.MicroServiceInstance) []*model.ServiceInstance {
-	// meshExternal := false
-	// resolution := model.ClientSideLB
-	// externalName := instance.Metadata[externalTagName]
-	// if externalName != "" {
-	// 	meshExternal = true
-	// 	resolution = model.DNSLB
-	// }
-	svcLabels := deepcopy.Copy(instance.Metadata).(map[string]string)
+func convertInstance(service *model.Service, combInstance *proto.MicroServiceInstance) []*model.ServiceInstance {
+
+	svcLabels := deepcopy.Copy(combInstance.Properties).(map[string]string)
+	svcLabels["instanceid"] = combInstance.InstanceId
+	svcLabels["serviceid"] = combInstance.ServiceId
 	tlsMode := model.GetTLSModeFromEndpointLabels(svcLabels)
-	localityLabel := path.Join(instance.DataCenterInfo.Name, instance.DataCenterInfo.AvailableZone, instance.DataCenterInfo.Region)
+	localityLabel := path.Join(combInstance.DataCenterInfo.Name, combInstance.DataCenterInfo.AvailableZone, combInstance.DataCenterInfo.Region)
 
-	pepsMap := getPlaneEpsMap(instance)
+	pepsMap := getPlaneEpsMap(combInstance)
 	planeName, _, _, _ := parseHostName(service.Hostname)
 	endpoints := pepsMap[planeName]
 	instances := []*model.ServiceInstance{}
@@ -185,15 +177,15 @@ func convertInstance(service *model.Service, instance *registry.MicroServiceInst
 }
 
 // serviceHostname produces FQDN for a consul service
-func serviceHostnameSuffix(service *registry.MicroService) string {
-	return fmt.Sprintf("%s.%s.__v%s", service.ServiceName, service.AppID, strings.ReplaceAll(service.Version, ".", "_"))
+func serviceHostnameSuffix(service *proto.MicroService) string {
+	return fmt.Sprintf("%s.%s.__v%s", service.ServiceName, service.AppId, strings.ReplaceAll(service.Version, ".", "_"))
 }
 
 func serviceHostname(plane, suffix string) host.Name {
 	return host.Name(fmt.Sprintf("%s.%s", plane, suffix))
 }
 
-func parseHostName(hostname host.Name) (plane, svcName, svcID string, err error) {
+func parseHostName(hostname host.Name) (plane, svcName, appID string, err error) {
 	parts := strings.Split(string(hostname), ".")
 	if len(parts) < 4 {
 		err = fmt.Errorf("missing service name from the service hostname %q", hostname)
@@ -201,7 +193,7 @@ func parseHostName(hostname host.Name) (plane, svcName, svcID string, err error)
 	}
 	plane = parts[0]
 	svcName = parts[1]
-	svcID = parts[2]
+	appID = parts[2]
 	err = nil
 	return
 }
@@ -213,4 +205,16 @@ func convertProtocol(name string) protocol.Instance {
 		return protocol.TCP
 	}
 	return p
+}
+
+func convertEvent(event string) model.Event {
+	switch event {
+	case client.EventCreate:
+		return model.EventAdd
+	case client.EventUpdate:
+		return model.EventUpdate
+	case client.EventDelete:
+		return model.EventDelete
+	}
+	return model.EventUpdate
 }

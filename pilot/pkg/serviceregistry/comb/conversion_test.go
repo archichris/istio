@@ -15,28 +15,17 @@
 package comb
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"istio.io/istio/pkg/config/protocol"
 
-	"github.com/go-chassis/go-chassis/core/registry"
+	"github.com/go-chassis/go-chassis/pkg/scclient/proto"
+	"istio.io/istio/pkg/config/host"
 )
 
 var (
-	// protocols = []struct {
-	// 	name string
-	// 	port int
-	// 	out  protocol.Instance
-	// }{
-	// 	{"tcp", 80, protocol.TCP},
-	// 	{"http", 81, protocol.HTTP},
-	// 	{"https", 443, protocol.HTTPS},
-	// 	{"http2", 83, protocol.HTTP2},
-	// 	{"grpc", 84, protocol.GRPC},
-	// 	{"udp", 85, protocol.UDP},
-	// 	{"", 86, protocol.TCP},
-	// }
-
 	goodLabels = []string{
 		"key1|val1",
 		"version|v1",
@@ -46,22 +35,60 @@ var (
 		"badtag",
 		"goodtag|goodvalue",
 	}
+
+	svc = proto.MicroService{
+		ServiceId:   "serviceid",
+		AppId:       "appid",
+		ServiceName: "test",
+		Version:     "0.0.1",
+	}
+
+	insts = []proto.MicroServiceInstance{
+		{
+			InstanceId:     "instanceid1",
+			HostName:       "test1",
+			ServiceId:      svc.ServiceId,
+			Status:         "UP",
+			Endpoints:      []string{"udp://127.0.0.1:8080"},
+			Properties:     map[string]string{"a": "b", "extPlane_fabric": "tcp://192.168.0.1:80", "extPlane_om": "tcp://172.16.0.1:808"},
+			DataCenterInfo: &proto.DataCenterInfo{Name: "dc", Region: "bj", AvailableZone: "az1"},
+		},
+		{
+			InstanceId:     "instanceid2",
+			HostName:       "test2",
+			ServiceId:      svc.ServiceId,
+			Status:         "UP",
+			Endpoints:      []string{"udp://127.0.0.2:8080"},
+			Properties:     map[string]string{"a": "b", "extPlane_fabric": "tcp://192.168.0.2:80", "extPlane_om": "tcp://172.16.0.2:808"},
+			DataCenterInfo: &proto.DataCenterInfo{Name: "dc", Region: "bj", AvailableZone: "az1"},
+		},
+		{
+			InstanceId:     "instanceid3",
+			HostName:       "test3",
+			ServiceId:      svc.ServiceId,
+			Status:         "UP",
+			Endpoints:      []string{"udp://127.0.0.3:8080"},
+			Properties:     map[string]string{"a": "b", "extPlane_fabric": "tcp://192.168.0.3:80", "extPlane_om": "tcp://172.16.0.3:808"},
+			DataCenterInfo: &proto.DataCenterInfo{Name: "dc", Region: "bj", AvailableZone: "az2"},
+		},
+	}
+	instps = []*proto.MicroServiceInstance{&insts[0], &insts[1], &insts[2]}
 )
 
 func TestParseEndpoint(t *testing.T) {
-	endpoint1 := "127.0.0.1:8080?sslEnable=true"
+	endpoint1 := "127.0.0.1:8080?sslEnabled=true"
 	endpoint2 := "192.168.0.1:80"
-	endpoint3 := "172.16.0.1:808?sslEnable=false"
+	endpoint3 := "172.16.0.1:808?sslEnabled=false"
 	addr, port, ssl := parseEndpoint(endpoint1)
 	if addr != "127.0.0.1" || port != "8080" || !ssl {
 		t.Errorf("parseEndpoint failed, %s->%s,%s,%v", endpoint1, addr, port, ssl)
 	}
 	addr, port, ssl = parseEndpoint(endpoint2)
-	if addr != "192.168.0.1" || port != "80" || !ssl {
+	if addr != "192.168.0.1" || port != "80" || ssl {
 		t.Errorf("parseEndpoint failed, %s->%s,%s,%v", endpoint2, addr, port, ssl)
 	}
 	addr, port, ssl = parseEndpoint(endpoint3)
-	if addr != "172.16.0.1" || port != "808" || !ssl {
+	if addr != "172.16.0.1" || port != "808" || ssl {
 		t.Errorf("parseEndpoint failed, %s->%s,%s,%v", endpoint3, addr, port, ssl)
 	}
 }
@@ -96,31 +123,9 @@ func TestConvertProtocol(t *testing.T) {
 		t.Errorf("convertPort error, number of port is incorrect %+v", out)
 	}
 }
-
-// func TestConvertLabels(t *testing.T) {
-// 	out := convertLabels(goodLabels)
-// 	if len(out) != len(goodLabels) {
-// 		t.Errorf("convertLabels(%q) => length %v, want %v", goodLabels, len(out), len(goodLabels))
-// 	}
-
-// 	out = convertLabels(badLabels)
-// 	if len(out) == len(badLabels) {
-// 		t.Errorf("convertLabels(%q) => length %v, want %v", badLabels, len(out), len(badLabels)-1)
-// 	}
-// }
-
 func TestGetPlaneEpsMap(t *testing.T) {
-	inst := registry.MicroServiceInstance{
-		InstanceID:     "instanceid",
-		HostName:       "test",
-		ServiceID:      "serviceid",
-		Status:         "UP",
-		EndpointsMap:   map[string]string{"udp": "127.0.0.1:8080"},
-		Metadata:       map[string]string{"a": "b", "extPlane_fabric": "tcp://192.168.0.1:80", "extPlane_om": "tcp://172.16.0.1:808"},
-		DataCenterInfo: &registry.DataCenterInfo{Name: "dc", Region: "bj", AvailableZone: "az1"},
-	}
-	pepsMap := getPlaneEpsMap(&inst)
-	num := 1
+	pepsMap := getPlaneEpsMap(instps[0])
+	num := 0
 	for p, eps := range pepsMap {
 		switch p {
 		case "default":
@@ -145,138 +150,75 @@ func TestGetPlaneEpsMap(t *testing.T) {
 		}
 	}
 	if num != 3 {
-		t.Errorf("getPlaneEpsMap failed %+v", pepsMap)
+		t.Errorf("getPlaneEpsMap failed(%d) %+q", num, pepsMap)
 	}
 }
 
-// func TestConvertInstance(t *testing.T) {
-// 	ip := "172.19.0.11"
-// 	port := 9080
-// 	p := "udp"
-// 	name := "productpage"
-// 	tagKey1 := "version"
-// 	tagVal1 := "v1"
-// 	tagKey2 := "zone"
-// 	tagVal2 := "prod"
-// 	dc := "dc1"
-// 	consulServiceInst := api.CatalogService{
-// 		Node:        "istio-node",
-// 		Address:     "172.19.0.5",
-// 		ID:          "1111-22-3333-444",
-// 		ServiceName: name,
-// 		ServiceTags: []string{
-// 			fmt.Sprintf("%v|%v", tagKey1, tagVal1),
-// 			fmt.Sprintf("%v|%v", tagKey2, tagVal2),
-// 		},
-// 		ServiceAddress: ip,
-// 		ServicePort:    port,
-// 		Datacenter:     dc,
-// 		ServiceMeta:    map[string]string{protocolTagName: p},
-// 	}
+func TestConvertService(t *testing.T) {
+	ss := convertService(&svc, instps)
 
-// 	out := convertInstance(&consulServiceInst)
+	if len(ss) != 3 {
+		t.Errorf("convertService failed, %+v", ss)
+	}
+	num := 0
+	for _, s := range ss {
+		switch s.Hostname {
+		case "default.test.appid.__v0_0_1":
+			if s.Address == "0.0.0.0" && s.Ports[0].Port == 8080 {
+				num++
+			}
+		case "fabric.test.appid.__v0_0_1":
+			if s.Address == "0.0.0.0" && s.Ports[0].Port == 80 {
+				num++
+			}
+		case "om.test.appid.__v0_0_1":
+			if s.Address == "0.0.0.0" && s.Ports[0].Port == 808 {
+				num++
+			}
+		}
+	}
+	if num != 3 {
+		t.Errorf("convertService failed, matchnum:%d, %+v", num, ss)
+	}
 
-// 	if out.ServicePort.Protocol != protocol.UDP {
-// 		t.Errorf("convertInstance() => %v, want %v", out.ServicePort.Protocol, protocol.UDP)
-// 	}
+}
 
-// 	if out.ServicePort.Name != p {
-// 		t.Errorf("convertInstance() => %v, want %v", out.ServicePort.Name, p)
-// 	}
+func TestConvertInstance(t *testing.T) {
+	ss := convertService(&svc, instps)
+	for _, s := range ss {
+		for _, ins := range instps {
+			instances := convertInstance(s, ins)
+			if len(instances) != 1 {
+				t.Errorf("convertInstance failed, %+v", instances)
+			}
+			if instances[0].Endpoint.Labels["serviceid"] != "serviceid" ||
+				(instances[0].Endpoint.EndpointPort != 8080 && instances[0].Endpoint.EndpointPort != 808 && instances[0].Endpoint.EndpointPort != 80) {
+				t.Errorf("convertInstance failed, %v", instances[0].Endpoint)
+			}
 
-// 	if out.ServicePort.Port != port {
-// 		t.Errorf("convertInstance() => %v, want %v", out.ServicePort.Port, port)
-// 	}
+		}
+	}
 
-// 	if out.Endpoint.Locality.Label != dc {
-// 		t.Errorf("convertInstance() => %v, want %v", out.Endpoint.Locality, dc)
-// 	}
+}
 
-// 	if out.Endpoint.Address != ip {
-// 		t.Errorf("convertInstance() => %v, want %v", out.Endpoint.Address, ip)
-// 	}
-
-// 	if len(out.Endpoint.Labels) != 2 {
-// 		t.Errorf("convertInstance() len(Labels) => %v, want %v", len(out.Endpoint.Labels), 2)
-// 	}
-
-// 	if out.Endpoint.Labels[tagKey1] != tagVal1 || out.Endpoint.Labels[tagKey2] != tagVal2 {
-// 		t.Errorf("convertInstance() => missing or incorrect tag in %q", out.Endpoint.Labels)
-// 	}
-
-// 	if out.Service.Hostname != serviceHostname(name) {
-// 		t.Errorf("convertInstance() bad service hostname => %q, want %q",
-// 			out.Service.Hostname, serviceHostname(name))
-// 	}
-
-// 	if out.Service.Address != ip {
-// 		t.Errorf("convertInstance() bad service address => %q, want %q", out.Service.Address, ip)
-// 	}
-
-// 	if len(out.Service.Ports) != 1 {
-// 		t.Errorf("convertInstance() incorrect # of service ports => %q, want %q", len(out.Service.Ports), 1)
-// 	}
-
-// 	if out.Service.Ports[0].Port != port || out.Service.Ports[0].Name != p {
-// 		t.Errorf("convertInstance() incorrect service port => %q", out.Service.Ports[0])
-// 	}
-
-// 	if out.Service.External() {
-// 		t.Error("convertInstance() should not be external service")
-// 	}
-// }
+func TestServiceHostnameSuffix(t *testing.T) {
+	suffix := serviceHostnameSuffix(&svc)
+	if suffix != fmt.Sprintf("%s.%s.__v%s", svc.ServiceName, svc.AppId, strings.ReplaceAll(svc.Version, ".", "_")) {
+		t.Errorf("ServiceHostnameSuffix failed, %s", suffix)
+	}
+}
 
 func TestServiceHostname(t *testing.T) {
 	out := serviceHostname("base", "svc.app.__v1.1.1")
-
 	if string(out) != "base.svc.app.__v1.1.1" {
-		t.Errorf("serviceHostname() => %q, want %q", out, "productpage.service.consul")
+		t.Errorf("TestServiceHostname failed, %s", string(out))
 	}
 }
 
-// func TestConvertService(t *testing.T) {
-// name := "productpage"
-// consulServiceInsts := []*api.CatalogService{
-// 	{
-// 		Node:        "istio-node",
-// 		Address:     "172.19.0.5",
-// 		ID:          "1111-22-3333-444",
-// 		ServiceName: name,
-// 		ServiceTags: []string{
-// 			"version=v1",
-// 			"zone=prod",
-// 		},
-// 		ServiceAddress: "172.19.0.11",
-// 		ServicePort:    9080,
-// 		ServiceMeta:    map[string]string{protocolTagName: "udp"},
-// 	},
-// 	{
-// 		Node:        "istio-node",
-// 		Address:     "172.19.0.5",
-// 		ID:          "1111-22-3333-444",
-// 		ServiceName: name,
-// 		ServiceTags: []string{
-// 			"version=v2",
-// 		},
-// 		ServiceAddress: "172.19.0.12",
-// 		ServicePort:    9080,
-// 		ServiceMeta:    map[string]string{protocolTagName: "udp"},
-// 	},
-// }
-
-// out := convertService(consulServiceInsts)
-
-// if out.Hostname != serviceHostname(name) {
-// 	t.Errorf("convertService() bad hostname => %q, want %q",
-// 		out.Hostname, serviceHostname(name))
-// }
-
-// if out.External() {
-// 	t.Error("convertService() should not be an external service")
-// }
-
-// if len(out.Ports) != 1 {
-// 	t.Errorf("convertService() incorrect # of ports => %v, want %v",
-// 		len(out.Ports), 1)
-// }
-// }
+func TestParseHostName(t *testing.T) {
+	hostname := host.Name("base.svc.appid.__v0.0.1")
+	plane, svcName, appID, err := parseHostName(hostname)
+	if plane != "base" || svcName != "svc" || appID != "appid" || err != nil {
+		t.Errorf("TestParseHostName failed, %s-%s-%s, %v", plane, svcName, appID, err)
+	}
+}

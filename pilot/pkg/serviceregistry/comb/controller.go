@@ -18,13 +18,13 @@ import (
 	"crypto/tls"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/go-chassis/go-chassis/core/common"
 	"github.com/go-chassis/go-chassis/core/config"
 	"github.com/go-chassis/go-chassis/core/registry"
 	"github.com/go-chassis/go-chassis/core/registry/servicecenter"
 	chassisTLS "github.com/go-chassis/go-chassis/core/tls"
+	client "github.com/go-chassis/go-chassis/pkg/scclient"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	"istio.io/istio/pkg/config/host"
@@ -37,21 +37,10 @@ var _ serviceregistry.Instance = &Controller{}
 
 // Controller communicates with Consul and monitors for changes
 type Controller struct {
-	discover         *servicecenter.ServiceDiscovery
-	monitor          Monitor
-	services         map[string]*model.Service //key hostname value service
-	servicesList     []*model.Service
-	serviceInstances map[string][]*model.ServiceInstance //key hostname value serviceInstance array
-	cacheMutex       sync.Mutex
-	initDone         bool
-	clusterID        string
+	client    *client.RegistryClient
+	monitor   combMonitor
+	clusterID string
 }
-
-// type ServiceDiscovery struct {
-// 	Name           string
-// 	registryClient *client.RegistryClient
-// 	opts           client.Options
-// }
 
 func getTLSConfig(scheme, t string) (*tls.Config, error) {
 	var tlsConfig *tls.Config
@@ -65,7 +54,7 @@ func getTLSConfig(scheme, t string) (*tls.Config, error) {
 				log.Error(tmpErr.Error() + ", err: " + err.Error())
 				return nil, tmpErr
 			}
-			log.Errorf("Load %s TLS config failed: %s", err)
+			log.Errorf("Load %s TLS config failed: %s", scheme, err)
 			return nil, err
 		}
 		log.Warnf("%s TLS mode, verify peer: %t, cipher plugin: %s.",
@@ -106,9 +95,16 @@ func NewController(addr string, clusterID string) (*Controller, error) {
 		return nil, err
 	}
 
-	d, _ := (servicecenter.NewServiceDiscovery(oSD)).(*servicecenter.ServiceDiscovery)
+	sco := servicecenter.ToSCOptions(oSD)
+
+	r := &client.RegistryClient{}
+	if err := r.Initialize(sco); err != nil {
+		log.Errorf("RegistryClient initialization failed. %s", err)
+		return nil, err
+	}
+
 	controller := Controller{
-		discover: d,
+		client: r,
 	}
 
 	return &controller, nil
@@ -126,37 +122,30 @@ func (c *Controller) Cluster() string {
 
 // Services list declarations of all services in the system
 func (c *Controller) Services() ([]*model.Service, error) {
-	c.cacheMutex.Lock()
-	defer c.cacheMutex.Unlock()
+	c.monitor.cacheMutex.Lock()
+	defer c.monitor.cacheMutex.Unlock()
 
-	err := c.initCache()
-	if err != nil {
-		return nil, err
+	servicesList := make([]*model.Service, 0, len(c.monitor.services))
+	for _, value := range c.monitor.services {
+		servicesList = append(servicesList, value)
 	}
 
-	return c.servicesList, nil
+	return servicesList, nil
 }
 
 // GetService retrieves a service by host name if it exists
 func (c *Controller) GetService(hostname host.Name) (*model.Service, error) {
-	c.cacheMutex.Lock()
-	defer c.cacheMutex.Unlock()
+	c.monitor.cacheMutex.Lock()
+	defer c.monitor.cacheMutex.Unlock()
 
-	err := c.initCache()
-	if err != nil {
-		return nil, err
-	}
-
-	// Get actual service by name
-	// name, err := parseHostname(hostname)
+	// err := c.initCache()
 	// if err != nil {
-	// 	log.Infof("parseHostname(%s) => error %v", hostname, err)
 	// 	return nil, err
 	// }
-
-	if service, ok := c.services[string(hostname)]; ok {
+	if service, ok := c.monitor.services[string(hostname)]; ok {
 		return service, nil
 	}
+
 	return nil, nil
 }
 
@@ -180,22 +169,15 @@ func (c *Controller) WorkloadHealthCheckInfo(addr string) model.ProbeList {
 // any of the supplied labels. All instances match an empty tag list.
 func (c *Controller) InstancesByPort(svc *model.Service, port int,
 	labels labels.Collection) ([]*model.ServiceInstance, error) {
-	c.cacheMutex.Lock()
-	defer c.cacheMutex.Unlock()
+	c.monitor.cacheMutex.Lock()
+	defer c.monitor.cacheMutex.Unlock()
 
-	err := c.initCache()
-	if err != nil {
-		return nil, err
-	}
-
-	// Get actual service by name
-	// name, err := parseHostname(svc.Hostname)
+	// err := c.initCache()
 	// if err != nil {
-	// 	log.Infof("parseHostname(%s) => error %v", svc.Hostname, err)
 	// 	return nil, err
 	// }
 
-	if serviceInstances, ok := c.serviceInstances[string(svc.Hostname)]; ok {
+	if serviceInstances, ok := c.monitor.serviceInstances[string(svc.Hostname)]; ok {
 		var instances []*model.ServiceInstance
 		for _, instance := range serviceInstances {
 			if labels.HasSubsetOf(instance.Endpoint.Labels) && portMatch(instance, port) {
@@ -215,16 +197,16 @@ func portMatch(instance *model.ServiceInstance, port int) bool {
 
 // GetProxyServiceInstances lists service instances co-located with a given proxy
 func (c *Controller) GetProxyServiceInstances(node *model.Proxy) ([]*model.ServiceInstance, error) {
-	c.cacheMutex.Lock()
-	defer c.cacheMutex.Unlock()
+	c.monitor.cacheMutex.Lock()
+	defer c.monitor.cacheMutex.Unlock()
 
-	err := c.initCache()
-	if err != nil {
-		return nil, err
-	}
+	// err := c.initCache()
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	out := make([]*model.ServiceInstance, 0)
-	for _, instances := range c.serviceInstances {
+	for _, instances := range c.monitor.serviceInstances {
 		for _, instance := range instances {
 			addr := instance.Endpoint.Address
 			if len(node.IPAddresses) > 0 {
@@ -243,16 +225,16 @@ func (c *Controller) GetProxyServiceInstances(node *model.Proxy) ([]*model.Servi
 
 // GetProxyWorkloadLabels lists service labels co-located with a given proxy
 func (c *Controller) GetProxyWorkloadLabels(proxy *model.Proxy) (labels.Collection, error) {
-	c.cacheMutex.Lock()
-	defer c.cacheMutex.Unlock()
+	c.monitor.cacheMutex.Lock()
+	defer c.monitor.cacheMutex.Unlock()
 
-	err := c.initCache()
-	if err != nil {
-		return nil, err
-	}
+	// err := c.initCache()
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	out := make(labels.Collection, 0)
-	for _, instances := range c.serviceInstances {
+	for _, instances := range c.monitor.serviceInstances {
 		for _, instance := range instances {
 			addr := instance.Endpoint.Address
 			if len(proxy.IPAddresses) > 0 {
@@ -276,126 +258,89 @@ func (c *Controller) Run(stop <-chan struct{}) {
 
 // AppendServiceHandler implements a service catalog operation
 func (c *Controller) AppendServiceHandler(f func(*model.Service, model.Event)) error {
-	// c.monitor.AppendServiceHandler(func(instances []*api.CatalogService, event model.Event) error {
-	// 	f(convertService(instances), event)
-	// 	return nil
-	// })
+	c.monitor.svcHandlers = append(c.monitor.svcHandlers, f)
 	return nil
 }
+
+// func (c *Controller) serviceHandler(serviceID string, *instance registry.MicroServiceInstance, event string) error {
+// 	// convertEven
+// 	return nil
+// }
 
 // AppendInstanceHandler implements a service catalog operation
 func (c *Controller) AppendInstanceHandler(f func(*model.ServiceInstance, model.Event)) error {
-	// c.monitor.AppendInstanceHandler(func(endpoint *registry.MicroServiceInstance, event model.Event) error {
-	// 	for _, instance := range convertInstance(endpoint) {
-	// 		f(instance, event)
-	// 	}
-	// 	return nil
-	// })
+	c.monitor.instHandlers = append(c.monitor.instHandlers, f)
 	return nil
 }
 
+// func (c *Controller) instanceHandler(serviceID string, *instance registry.MicroServiceInstance, event string) error {
+// 	// convertEven
+// 	return nil
+// }
+
 // GetIstioServiceAccounts implements model.ServiceAccounts operation TODO
 func (c *Controller) GetIstioServiceAccounts(svc *model.Service, ports []int) []string {
-	// Need to get service account of service registered with consul
-	// Currently Consul does not have service account or equivalent concept
-	// As a step-1, to enabling istio security in Consul, We assume all the services run in default service account
-	// This will allow all the consul services to do mTLS
-	// Follow - https://goo.gl/Dt11Ct
-
 	return []string{
 		spiffe.MustGenSpiffeURI("default", "default"),
 	}
 }
 
-func (c *Controller) initCache() error {
-	if c.initDone {
-		return nil
-	}
+// func (c *Controller) initCache() error {
+// 	if c.initDone {
+// 		return nil
+// 	}
+// 	c.services = make(map[string]*model.Service)
+// 	c.serviceInstances = make(map[string][]*model.ServiceInstance)
+// 	c.combSvc = make(map[string][]string)
+// 	c.combInst = make(map[string][]string)
 
-	c.services = make(map[string]*model.Service)
-	c.serviceInstances = make(map[string][]*model.ServiceInstance)
-
-	// get all services from servicecomb
-	Services, err := ((*servicecenter.ServiceDiscovery)(c.discover)).GetAllMicroServices()
-	if err != nil {
-		return err
-	}
-
-	for _, service := range Services {
-		// get endpoints of a service from consul
-
-		endpoints, err := c.discover.GetMicroServiceInstances("0", service.ServiceID)
-		if err != nil {
-			return err
-		}
-
-		svcs := convertService(service, endpoints)
-
-		for _, svc := range svcs {
-			c.services[string(svc.Hostname)] = svc
-			instances := []*model.ServiceInstance{}
-			// instances := make([]*model.ServiceInstance, len(endpoints))
-			for _, endpoint := range endpoints {
-				// for _, instance := range convertInstance(svc, endpoint) {
-				instances = append(instances, convertInstance(svc, endpoint)...)
-				// }
-			}
-			c.serviceInstances[string(svc.Hostname)] = instances
-		}
-	}
-
-	c.servicesList = make([]*model.Service, 0, len(c.services))
-	for _, value := range c.services {
-		c.servicesList = append(c.servicesList, value)
-	}
-
-	c.initDone = true
-	return nil
-}
-
-// func (c *Controller) getServices() (map[string][]string, error) {
-// 	data, _, err := c.discover.GetAllMicroServices()
+// 	// get all services from servicecomb
+// 	services, err := ((*servicecenter.ServiceDiscovery)(c.discover)).GetAllMicroServices()
 // 	if err != nil {
-// 		log.Warnf("Could not retrieve services from consul: %v", err)
-// 		return nil, err
+// 		return err
 // 	}
 
-// 	return data, nil
-// }
+// 	for _, service := range services {
+// 		// get endpoints of a service from consul
 
-// func (c *Controller) Provider() serviceregistry.ProviderID {
-// 	return serviceregistry.Comb
-// }
+// 		endpoints, err := c.discover.GetMicroServiceInstances("0", service.ServiceID)
+// 		if err != nil {
+// 			return err
+// 		}
 
-// func (c *Controller) Cluster() string {
-// 	return c.clusterID
-// }
-
-// nolint: unparam
-// func (c *Controller) getCatalogService(name string, q *api.QueryOptions) ([]*api.CatalogService, error) {
-// 	endpoints, _, err := c.client.Catalog().Service(name, "", q)
-// 	if err != nil {
-// 		log.Warnf("Could not retrieve service catalog from consul: %v", err)
-// 		return nil, err
+// 		svcs := convertService(service, endpoints)
+// 		for _, svc := range svcs {
+// 			c.services[string(svc.Hostname)] = svc
+// 			c.combSvc[service.ServiceID] = append(c.combSvc[service.ServiceID], string(svc.Hostname))
+// 			instances := []*model.ServiceInstance{}
+// 			// instances := make([]*model.ServiceInstance, len(endpoints))
+// 			for _, endpoint := range endpoints {
+// 				// for _, instance := range convertInstance(svc, endpoint) {
+// 				instances = append(instances, convertInstance(svc, endpoint)...)
+// 				c.combInst[service.ServiceID] = append(c.combInst[service.ServiceID], endpoint.InstanceID)
+// 			}
+// 			c.serviceInstances[string(svc.Hostname)] = instances
+// 		}
 // 	}
 
-// 	return endpoints, nil
+// 	c.initDone = true
+// 	return nil
 // }
 
-func (c *Controller) refreshCache() {
-	c.cacheMutex.Lock()
-	defer c.cacheMutex.Unlock()
-	c.initDone = false
-}
+// func (c *Controller) refreshCache() {
+// 	c.cacheMutex.Lock()
+// 	defer c.cacheMutex.Unlock()
+// 	c.initDone = false
+// }
 
-// InstanceChanged instances event callback
-func (c *Controller) InstanceChanged(instance []*registry.MicroServiceInstance, event model.Event) error {
-	c.refreshCache()
-	return nil
-}
+// // InstanceChanged instances event callback
+// func (c *Controller) InstanceChanged(instance []*registry.MicroServiceInstance, event model.Event) error {
+// 	c.refreshCache()
+// 	return nil
+// }
 
-// ServiceChanged services event callback
-func (c *Controller) ServiceChanged(service []*registry.MicroService, event model.Event) error {
-	c.refreshCache()
-	return nil
-}
+// // ServiceChanged services event callback
+// func (c *Controller) ServiceChanged(service []*registry.MicroService, event model.Event) error {
+// 	c.refreshCache()
+// 	return nil
+// }
