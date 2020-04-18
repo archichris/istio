@@ -549,8 +549,8 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(proxy *model.Proxy,
 					Port:            instance.ServicePort,
 					Push:            push,
 					// multi-network
-					// Bind:            actualLocalHost,
-					Bind: instance.Endpoint.Address,
+					Bind: actualLocalHost,
+					// Bind: instance.Endpoint.Address,
 				}
 				localCluster := configgen.buildInboundClusterForPortOrUDS(pluginParams)
 				clusters = append(clusters, localCluster)

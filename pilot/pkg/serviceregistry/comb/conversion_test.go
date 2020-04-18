@@ -26,15 +26,15 @@ import (
 )
 
 var (
-	goodLabels = []string{
-		"key1|val1",
-		"version|v1",
-	}
+	// goodLabels = []string{
+	// 	"key1|val1",
+	// 	"version|v1",
+	// }
 
-	badLabels = []string{
-		"badtag",
-		"goodtag|goodvalue",
-	}
+	// badLabels = []string{
+	// 	"badtag",
+	// 	"goodtag|goodvalue",
+	// }
 
 	svc = proto.MicroService{
 		ServiceId:   "serviceid",

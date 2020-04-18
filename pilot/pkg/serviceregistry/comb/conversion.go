@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/go-chassis/go-chassis/core/registry"
-	client "github.com/go-chassis/go-chassis/pkg/scclient"
 	"github.com/go-chassis/go-chassis/pkg/scclient/proto"
 	"github.com/mohae/deepcopy"
 	"istio.io/istio/pilot/pkg/model"
@@ -32,18 +31,18 @@ import (
 )
 
 const (
-	protocolTagName  = "protocol"
-	externalTagName  = "external"
+	// protocolTagName  = "protocol"
+	// externalTagName  = "external"
 	defaultPlaneName = "default"
 	extPlanePrefix   = "extPlane_"
 	extEpSep         = ";"
-	extProtoAddrSep  = "://"
+	// extProtoAddrSep  = "://"
 )
 
 func parseEndpoint(endpoint string) (addr, port string, ssl bool) {
 	parts := strings.Split(endpoint, ":")
 	addr = parts[0]
-	if strings.Index(parts[1], "sslEnabled=true") >= 0 {
+	if strings.Contains(parts[1], "sslEnabled=true") {
 		ssl = true
 	} else {
 		ssl = false
@@ -207,14 +206,14 @@ func convertProtocol(name string) protocol.Instance {
 	return p
 }
 
-func convertEvent(event string) model.Event {
-	switch event {
-	case client.EventCreate:
-		return model.EventAdd
-	case client.EventUpdate:
-		return model.EventUpdate
-	case client.EventDelete:
-		return model.EventDelete
-	}
-	return model.EventUpdate
-}
+// func convertEvent(event string) model.Event {
+// 	switch event {
+// 	case client.EventCreate:
+// 		return model.EventAdd
+// 	case client.EventUpdate:
+// 		return model.EventUpdate
+// 	case client.EventDelete:
+// 		return model.EventDelete
+// 	}
+// 	return model.EventUpdate
+// }

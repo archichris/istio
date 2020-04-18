@@ -57,9 +57,9 @@ type combMonitor struct {
 }
 
 const (
-	refreshIdleTime    time.Duration = 5 * time.Second
-	periodicCheckTime  time.Duration = 2 * time.Second
-	blockQueryWaitTime time.Duration = 10 * time.Minute
+	// refreshIdleTime    time.Duration = 5 * time.Second
+	periodicCheckTime time.Duration = 2 * time.Second
+	// blockQueryWaitTime time.Duration = 10 * time.Minute
 )
 
 // NewCombMonitor watches for changes in Consul services and CatalogServices

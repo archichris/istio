@@ -56,10 +56,16 @@ type ConsulArgs struct {
 	ServerURL string
 }
 
+// CombArgs provides configuration for the Servicecomb service registry.
+// type CombArgs struct {
+// 	ServerURL string
+// }
+
 // ServiceArgs provides the composite configuration for all service registries in the system.
 type ServiceArgs struct {
 	Registries []string
 	Consul     ConsulArgs
+	// Comb       CombArgs //for Servicecomb
 }
 
 // PilotArgs provides all of the configuration parameters for the Pilot discovery service.

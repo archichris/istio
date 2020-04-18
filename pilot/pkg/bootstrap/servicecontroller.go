@@ -23,6 +23,7 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	"istio.io/istio/pilot/pkg/serviceregistry/aggregate"
+	"istio.io/istio/pilot/pkg/serviceregistry/comb"
 	"istio.io/istio/pilot/pkg/serviceregistry/consul"
 	"istio.io/istio/pilot/pkg/serviceregistry/external"
 	kubecontroller "istio.io/istio/pilot/pkg/serviceregistry/kube/controller"
@@ -57,6 +58,12 @@ func (s *Server) initServiceControllers(args *PilotArgs) error {
 			}
 		case serviceregistry.Mock:
 			s.initMemoryRegistry(serviceControllers)
+
+		case serviceregistry.Comb:
+			// for ServiceComb
+			if err := s.initCombRegistry(serviceControllers, args); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("service registry %s is not supported", r)
 		}
@@ -113,4 +120,16 @@ func (s *Server) initMemoryRegistry(serviceControllers *aggregate.Controller) {
 	}
 
 	serviceControllers.AddRegistry(registry)
+}
+
+//for ServiceComb
+func (s *Server) initCombRegistry(serviceControllers *aggregate.Controller, args *PilotArgs) error {
+	// log.Infof("ServiceComb url: %v", args.Service.Comb.ServerURL)
+	conctl, conerr := comb.NewController("", "")
+	if conerr != nil {
+		return fmt.Errorf("failed to create servicecomb controller: %v", conerr)
+	}
+	serviceControllers.AddRegistry(conctl)
+
+	return nil
 }

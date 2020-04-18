@@ -112,8 +112,8 @@ func hasKubeRegistry() bool {
 func init() {
 	discoveryCmd.PersistentFlags().StringSliceVar(&serverArgs.Service.Registries, "registries",
 		[]string{string(serviceregistry.Kubernetes)},
-		fmt.Sprintf("Comma separated list of platform service registries to read from (choose one or more from {%s, %s, %s})",
-			serviceregistry.Kubernetes, serviceregistry.Consul, serviceregistry.Mock))
+		fmt.Sprintf("Comma separated list of platform service registries to read from (choose one or more from {%s, %s, %s, %s})",
+			serviceregistry.Kubernetes, serviceregistry.Consul, serviceregistry.Mock, serviceregistry.Comb))
 	discoveryCmd.PersistentFlags().StringVar(&serverArgs.Config.ClusterRegistriesNamespace, "clusterRegistriesNamespace",
 		serverArgs.Config.ClusterRegistriesNamespace, "Namespace for ConfigMap which stores clusters configs")
 	discoveryCmd.PersistentFlags().StringVar(&serverArgs.Config.KubeConfig, "kubeconfig", "",
@@ -154,6 +154,10 @@ func init() {
 		"The domain serves to identify the system with spiffe")
 	discoveryCmd.PersistentFlags().StringVar(&serverArgs.Service.Consul.ServerURL, "consulserverURL", "",
 		"URL for the Consul server")
+
+	// //for ServiceComb
+	// discoveryCmd.PersistentFlags().StringVar(&serverArgs.Service.Comb.ServerURL, "combserverURL", "",
+	// 	"URL for the ServiceComb server")
 
 	// using address, so it can be configured as localhost:.. (possibly UDS in future)
 	discoveryCmd.PersistentFlags().StringVar(&serverArgs.DiscoveryOptions.HTTPAddr, "httpAddr", ":8080",

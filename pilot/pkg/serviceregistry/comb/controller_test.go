@@ -16,8 +16,11 @@ package comb
 
 import "testing"
 
-func TestEmpty(t *testing.T) {
-	return
+func TestNewController(t *testing.T) {
+	ctrl, err := NewController("192.168.56.31:30543", "")
+	if ctrl == nil || err != nil {
+		t.Errorf("Create NetController failed, %v, %v", ctrl, err)
+	}
 }
 
 // import (

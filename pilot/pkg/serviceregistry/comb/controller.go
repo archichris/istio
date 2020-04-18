@@ -15,15 +15,12 @@
 package comb
 
 import (
-	"crypto/tls"
 	"fmt"
-	"strings"
+	"os"
+	"time"
 
-	"github.com/go-chassis/go-chassis/core/common"
-	"github.com/go-chassis/go-chassis/core/config"
-	"github.com/go-chassis/go-chassis/core/registry"
-	"github.com/go-chassis/go-chassis/core/registry/servicecenter"
-	chassisTLS "github.com/go-chassis/go-chassis/core/tls"
+	// "github.com/go-chassis/go-chassis/core/config"
+	// "github.com/go-chassis/go-chassis/core/registry/servicecenter"
 	client "github.com/go-chassis/go-chassis/pkg/scclient"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
@@ -42,63 +39,93 @@ type Controller struct {
 	clusterID string
 }
 
-func getTLSConfig(scheme, t string) (*tls.Config, error) {
-	var tlsConfig *tls.Config
-	secure := scheme == common.HTTPS
-	if secure {
-		sslTag := t + "." + common.Consumer
-		tmpTLSConfig, sslConfig, err := chassisTLS.GetTLSConfigByService(t, "", common.Consumer)
-		if err != nil {
-			if chassisTLS.IsSSLConfigNotExist(err) {
-				tmpErr := fmt.Errorf("%s tls mode, but no ssl config", sslTag)
-				log.Error(tmpErr.Error() + ", err: " + err.Error())
-				return nil, tmpErr
-			}
-			log.Errorf("Load %s TLS config failed: %s", scheme, err)
-			return nil, err
-		}
-		log.Warnf("%s TLS mode, verify peer: %t, cipher plugin: %s.",
-			sslTag, sslConfig.VerifyPeer, sslConfig.CipherPlugin)
-		tlsConfig = tmpTLSConfig
-	}
-	return tlsConfig, nil
-}
+// func getTLSConfig(scheme, t string) (*tls.Config, error) {
+// 	var tlsConfig *tls.Config
+// 	secure := scheme == common.HTTPS
+// 	if secure {
+// 		sslTag := t + "." + common.Consumer
+// 		tmpTLSConfig, sslConfig, err := chassisTLS.GetTLSConfigByService(t, "", common.Consumer)
+// 		if err != nil {
+// 			if chassisTLS.IsSSLConfigNotExist(err) {
+// 				tmpErr := fmt.Errorf("%s tls mode, but no ssl config", sslTag)
+// 				log.Error(tmpErr.Error() + ", err: " + err.Error())
+// 				return nil, tmpErr
+// 			}
+// 			log.Errorf("Load %s TLS config failed: %s", scheme, err)
+// 			return nil, err
+// 		}
+// 		log.Warnf("%s TLS mode, verify peer: %t, cipher plugin: %s.",
+// 			sslTag, sslConfig.VerifyPeer, sslConfig.CipherPlugin)
+// 		tlsConfig = tmpTLSConfig
+// 	}
+// 	return tlsConfig, nil
+// }
 
-func getDiscoverOptions() (oSD registry.Options, err error) {
-	hostsSD, schemeSD, err := registry.URIs2Hosts(strings.Split(config.GetServiceDiscoveryAddress(), ","))
-	if err != nil {
-		return
+// func getDiscoverOptions() (oSD registry.Options, err error) {
+// 	hostsSD, schemeSD, err := registry.URIs2Hosts(strings.Split(config.GetServiceDiscoveryAddress(), ","))
+// 	if err != nil {
+// 		return
+// 	}
+// 	oSD.Addrs = hostsSD
+// 	oSD.Tenant = config.GetServiceDiscoveryTenant()
+// 	oSD.Version = config.GetServiceDiscoveryAPIVersion()
+// 	oSD.ConfigPath = config.GetServiceDiscoveryConfigPath()
+// 	oSD.TLSConfig, err = getTLSConfig(schemeSD, "serviceDiscovery")
+// 	if err != nil {
+// 		return
+// 	}
+// 	if oSD.TLSConfig != nil {
+// 		oSD.EnableSSL = true
+// 	}
+// 	return
+// }
+
+var (
+	opt = client.Options{
+		Addrs:        []string{"127.0.0.1:30100"},
+		EnableSSL:    false,
+		ConfigTenant: "default",
+		Timeout:      time.Duration(15),
 	}
-	oSD.Addrs = hostsSD
-	oSD.Tenant = config.GetServiceDiscoveryTenant()
-	oSD.Version = config.GetServiceDiscoveryAPIVersion()
-	oSD.ConfigPath = config.GetServiceDiscoveryConfigPath()
-	oSD.TLSConfig, err = getTLSConfig(schemeSD, "serviceDiscovery")
-	if err != nil {
-		return
-	}
-	if oSD.TLSConfig != nil {
-		oSD.EnableSSL = true
-	}
-	return
-}
+)
+
+// type Options struct {
+// 	Addrs        []string
+// 	EnableSSL    bool
+// 	ConfigTenant string
+// 	Timeout      time.Duration
+// 	TLSConfig    *tls.Config
+// 	// Other options can be stored in a context
+// 	Context    context.Context
+// 	Compressed bool
+// 	Verbose    bool
+// 	Version    string
+// }
 
 // NewController creates a new servicecomb controller
 func NewController(addr string, clusterID string) (*Controller, error) {
-	if err := config.Init(); err != nil {
-		log.Error("failed to initialize conf: " + err.Error())
-		return nil, err
-	}
-	// var oR, oSD, oCD registry.Options
-	oSD, err := getDiscoverOptions()
-	if err != nil {
-		return nil, err
-	}
+	// if err := config.Init(); err != nil {
+	// 	log.Error("failed to initialize conf: " + err.Error())
+	// 	return nil, err
+	// }
+	// // var oR, oSD, oCD registry.Options
+	// oSD, err := getDiscoverOptions()
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	sco := servicecenter.ToSCOptions(oSD)
+	// sco := servicecenter.ToSCOptions(oSD)
 
+	address := os.Getenv("COMB_ADDR")
 	r := &client.RegistryClient{}
-	if err := r.Initialize(sco); err != nil {
+
+	if len(address) != 0 {
+		opt.Addrs[0] = address
+	} else if len(addr) != 0 {
+		opt.Addrs[0] = addr
+	}
+
+	if err := r.Initialize(opt); err != nil {
 		log.Errorf("RegistryClient initialization failed. %s", err)
 		return nil, err
 	}
