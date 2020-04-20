@@ -22,7 +22,6 @@ import (
 
 	"github.com/go-chassis/go-chassis/core/registry"
 	"github.com/go-chassis/go-chassis/pkg/scclient/proto"
-	"github.com/mohae/deepcopy"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
 	"istio.io/istio/pkg/config/host"
@@ -139,11 +138,17 @@ func convertService(service *proto.MicroService, instances []*proto.MicroService
 
 func convertInstance(service *model.Service, combInstance *proto.MicroServiceInstance) []*model.ServiceInstance {
 
-	svcLabels := deepcopy.Copy(combInstance.Properties).(map[string]string)
+	svcLabels := map[string]string{}
+	for k, v := range combInstance.Properties {
+		svcLabels[k] = v
+	}
 	svcLabels["instanceid"] = combInstance.InstanceId
 	svcLabels["serviceid"] = combInstance.ServiceId
 	tlsMode := model.GetTLSModeFromEndpointLabels(svcLabels)
-	localityLabel := path.Join(combInstance.DataCenterInfo.Name, combInstance.DataCenterInfo.AvailableZone, combInstance.DataCenterInfo.Region)
+	localityLabel := ""
+	if combInstance.DataCenterInfo != nil {
+		localityLabel = path.Join(combInstance.DataCenterInfo.Name, combInstance.DataCenterInfo.AvailableZone, combInstance.DataCenterInfo.Region)
+	}
 
 	pepsMap := getPlaneEpsMap(combInstance)
 	planeName, _, _, _ := parseHostName(service.Hostname)

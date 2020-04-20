@@ -27,111 +27,49 @@ import (
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/spiffe"
-	"istio.io/pkg/log"
 )
 
 var _ serviceregistry.Instance = &Controller{}
-
-// Controller communicates with Consul and monitors for changes
-type Controller struct {
-	client    *client.RegistryClient
-	monitor   combMonitor
-	clusterID string
-}
-
-// func getTLSConfig(scheme, t string) (*tls.Config, error) {
-// 	var tlsConfig *tls.Config
-// 	secure := scheme == common.HTTPS
-// 	if secure {
-// 		sslTag := t + "." + common.Consumer
-// 		tmpTLSConfig, sslConfig, err := chassisTLS.GetTLSConfigByService(t, "", common.Consumer)
-// 		if err != nil {
-// 			if chassisTLS.IsSSLConfigNotExist(err) {
-// 				tmpErr := fmt.Errorf("%s tls mode, but no ssl config", sslTag)
-// 				log.Error(tmpErr.Error() + ", err: " + err.Error())
-// 				return nil, tmpErr
-// 			}
-// 			log.Errorf("Load %s TLS config failed: %s", scheme, err)
-// 			return nil, err
-// 		}
-// 		log.Warnf("%s TLS mode, verify peer: %t, cipher plugin: %s.",
-// 			sslTag, sslConfig.VerifyPeer, sslConfig.CipherPlugin)
-// 		tlsConfig = tmpTLSConfig
-// 	}
-// 	return tlsConfig, nil
-// }
-
-// func getDiscoverOptions() (oSD registry.Options, err error) {
-// 	hostsSD, schemeSD, err := registry.URIs2Hosts(strings.Split(config.GetServiceDiscoveryAddress(), ","))
-// 	if err != nil {
-// 		return
-// 	}
-// 	oSD.Addrs = hostsSD
-// 	oSD.Tenant = config.GetServiceDiscoveryTenant()
-// 	oSD.Version = config.GetServiceDiscoveryAPIVersion()
-// 	oSD.ConfigPath = config.GetServiceDiscoveryConfigPath()
-// 	oSD.TLSConfig, err = getTLSConfig(schemeSD, "serviceDiscovery")
-// 	if err != nil {
-// 		return
-// 	}
-// 	if oSD.TLSConfig != nil {
-// 		oSD.EnableSSL = true
-// 	}
-// 	return
-// }
-
 var (
-	opt = client.Options{
-		Addrs:        []string{"127.0.0.1:30100"},
+	defaultRegisterAddr = "127.0.0.1:30100"
+	opt                 = client.Options{
 		EnableSSL:    false,
 		ConfigTenant: "default",
 		Timeout:      time.Duration(15),
+		Version:      "v3",
 	}
 )
 
-// type Options struct {
-// 	Addrs        []string
-// 	EnableSSL    bool
-// 	ConfigTenant string
-// 	Timeout      time.Duration
-// 	TLSConfig    *tls.Config
-// 	// Other options can be stored in a context
-// 	Context    context.Context
-// 	Compressed bool
-// 	Verbose    bool
-// 	Version    string
-// }
+// Controller communicates with Consul and monitors for changes
+type Controller struct {
+	// client    *client.RegistryClient
+	monitor   *combMonitor
+	clusterID string
+}
 
 // NewController creates a new servicecomb controller
 func NewController(addr string, clusterID string) (*Controller, error) {
-	// if err := config.Init(); err != nil {
-	// 	log.Error("failed to initialize conf: " + err.Error())
-	// 	return nil, err
-	// }
-	// // var oR, oSD, oCD registry.Options
-	// oSD, err := getDiscoverOptions()
-	// if err != nil {
-	// 	return nil, err
-	// }
 
-	// sco := servicecenter.ToSCOptions(oSD)
+	address := addr
 
-	address := os.Getenv("COMB_ADDR")
-	r := &client.RegistryClient{}
-
-	if len(address) != 0 {
-		opt.Addrs[0] = address
-	} else if len(addr) != 0 {
-		opt.Addrs[0] = addr
+	if len(address) == 0 {
+		if len(os.Getenv("COMB_ADDR")) != 0 {
+			address = os.Getenv("COMB_ADDR")
+		} else {
+			address = defaultRegisterAddr
+		}
 	}
+	opt.Addrs = []string{address}
 
-	if err := r.Initialize(opt); err != nil {
-		log.Errorf("RegistryClient initialization failed. %s", err)
+	monitor, err := NewCombMonitor(&opt)
+
+	if err != nil {
 		return nil, err
 	}
 
 	controller := Controller{
-		client: r,
+		monitor:   monitor,
+		clusterID: clusterID,
 	}
 
 	return &controller, nil
@@ -149,26 +87,13 @@ func (c *Controller) Cluster() string {
 
 // Services list declarations of all services in the system
 func (c *Controller) Services() ([]*model.Service, error) {
-	c.monitor.cacheMutex.Lock()
-	defer c.monitor.cacheMutex.Unlock()
-
-	servicesList := make([]*model.Service, 0, len(c.monitor.services))
-	for _, value := range c.monitor.services {
-		servicesList = append(servicesList, value)
-	}
-
-	return servicesList, nil
+	return c.monitor.Services()
 }
 
 // GetService retrieves a service by host name if it exists
 func (c *Controller) GetService(hostname host.Name) (*model.Service, error) {
 	c.monitor.cacheMutex.Lock()
 	defer c.monitor.cacheMutex.Unlock()
-
-	// err := c.initCache()
-	// if err != nil {
-	// 	return nil, err
-	// }
 	if service, ok := c.monitor.services[string(hostname)]; ok {
 		return service, nil
 	}
@@ -227,11 +152,6 @@ func (c *Controller) GetProxyServiceInstances(node *model.Proxy) ([]*model.Servi
 	c.monitor.cacheMutex.Lock()
 	defer c.monitor.cacheMutex.Unlock()
 
-	// err := c.initCache()
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	out := make([]*model.ServiceInstance, 0)
 	for _, instances := range c.monitor.serviceInstances {
 		for _, instance := range instances {
@@ -254,11 +174,6 @@ func (c *Controller) GetProxyServiceInstances(node *model.Proxy) ([]*model.Servi
 func (c *Controller) GetProxyWorkloadLabels(proxy *model.Proxy) (labels.Collection, error) {
 	c.monitor.cacheMutex.Lock()
 	defer c.monitor.cacheMutex.Unlock()
-
-	// err := c.initCache()
-	// if err != nil {
-	// 	return nil, err
-	// }
 
 	out := make(labels.Collection, 0)
 	for _, instances := range c.monitor.serviceInstances {

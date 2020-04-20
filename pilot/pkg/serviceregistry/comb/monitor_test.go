@@ -14,200 +14,88 @@
 
 package comb
 
-// var (
-// goodLabels = []string{
-// 	"key1|val1",
-// 	"version|v1",
-// }
+import (
+	"testing"
+	"time"
 
-// badLabels = []string{
-// 	"badtag",
-// 	"goodtag|goodvalue",
-// }
+	client "github.com/go-chassis/go-chassis/pkg/scclient"
+)
 
-// 	svc = proto.MicroService{
-// 		ServiceId:   "serviceid",
-// 		AppId:       "appid",
-// 		ServiceName: "test",
-// 		Version:     "0.0.1",
-// 	}
+var (
+	testAddr = "192.168.56.31:30543"
+	testOpt  = client.Options{
+		Addrs:        []string{testAddr},
+		EnableSSL:    false,
+		ConfigTenant: "default",
+		Timeout:      time.Duration(15),
+	}
+)
 
-// 	insts = []proto.MicroServiceInstance{
-// 		{
-// 			InstanceId:     "instanceid1",
-// 			HostName:       "test1",
-// 			ServiceId:      svc.ServiceId,
-// 			Status:         "UP",
-// 			Endpoints:      []string{"udp://127.0.0.1:8080"},
-// 			Properties:     map[string]string{"a": "b", "extPlane_fabric": "tcp://192.168.0.1:80", "extPlane_om": "tcp://172.16.0.1:808"},
-// 			DataCenterInfo: &proto.DataCenterInfo{Name: "dc", Region: "bj", AvailableZone: "az1"},
-// 		},
-// 		{
-// 			InstanceId:     "instanceid2",
-// 			HostName:       "test2",
-// 			ServiceId:      svc.ServiceId,
-// 			Status:         "UP",
-// 			Endpoints:      []string{"udp://127.0.0.2:8080"},
-// 			Properties:     map[string]string{"a": "b", "extPlane_fabric": "tcp://192.168.0.2:80", "extPlane_om": "tcp://172.16.0.2:808"},
-// 			DataCenterInfo: &proto.DataCenterInfo{Name: "dc", Region: "bj", AvailableZone: "az1"},
-// 		},
-// 		{
-// 			InstanceId:     "instanceid3",
-// 			HostName:       "test3",
-// 			ServiceId:      svc.ServiceId,
-// 			Status:         "UP",
-// 			Endpoints:      []string{"udp://127.0.0.3:8080"},
-// 			Properties:     map[string]string{"a": "b", "extPlane_fabric": "tcp://192.168.0.3:80", "extPlane_om": "tcp://172.16.0.3:808"},
-// 			DataCenterInfo: &proto.DataCenterInfo{Name: "dc", Region: "bj", AvailableZone: "az2"},
-// 		},
-// 	}
-// 	instps = []*proto.MicroServiceInstance{&insts[0], &insts[1], &insts[2]}
-// )
+func TestNewCombMonitor(t *testing.T) {
+	m, err := NewCombMonitor(&testOpt)
+	if err != nil {
+		t.Errorf("NewCombMonitor failed, %v", err)
+		return
+	}
+	m.client.Close()
 
-// func TestParseEndpoint(t *testing.T) {
-// 	endpoint1 := "127.0.0.1:8080?sslEnabled=true"
-// 	endpoint2 := "192.168.0.1:80"
-// 	endpoint3 := "172.16.0.1:808?sslEnabled=false"
-// 	addr, port, ssl := parseEndpoint(endpoint1)
-// 	if addr != "127.0.0.1" || port != "8080" || !ssl {
-// 		t.Errorf("parseEndpoint failed, %s->%s,%s,%v", endpoint1, addr, port, ssl)
-// 	}
-// 	addr, port, ssl = parseEndpoint(endpoint2)
-// 	if addr != "192.168.0.1" || port != "80" || ssl {
-// 		t.Errorf("parseEndpoint failed, %s->%s,%s,%v", endpoint2, addr, port, ssl)
-// 	}
-// 	addr, port, ssl = parseEndpoint(endpoint3)
-// 	if addr != "172.16.0.1" || port != "808" || ssl {
-// 		t.Errorf("parseEndpoint failed, %s->%s,%s,%v", endpoint3, addr, port, ssl)
-// 	}
-// }
+}
 
-// func TestConvertProtocol(t *testing.T) {
-// 	testEpsMap := map[string]string{
-// 		"udp":  "127.0.0.1:8080",
-// 		"tcp":  "127.0.0.1:8080",
-// 		"grpc": "127.0.0.1:8080"}
-// 	out := convertPort(testEpsMap)
-// 	num := 0
-// 	for _, port := range out {
-// 		switch port.Name {
-// 		case "udp":
-// 			if port.Protocol == protocol.UDP && port.Port == 8080 {
-// 				num++
-// 			}
-// 		case "tcp":
-// 			if port.Protocol == protocol.TCP && port.Port == 8080 {
-// 				num++
-// 			}
-// 		case "grpc":
-// 			if port.Protocol == protocol.GRPC && port.Port == 8080 {
-// 				num++
-// 			}
-// 		default:
-// 			t.Errorf("convertPort error, incorrect port info %+v", port)
-// 		}
-// 	}
+func TestStart(t *testing.T) {
+	monitor, err := NewCombMonitor(&testOpt)
+	if err != nil {
+		t.Errorf("NewCombMonitor failed, %v", err)
+		return
+	}
+	defer monitor.client.Close()
 
-// 	if num != 3 {
-// 		t.Errorf("convertPort error, number of port is incorrect %+v", out)
-// 	}
-// }
-// func TestGetPlaneEpsMap(t *testing.T) {
-// 	pepsMap := getPlaneEpsMap(instps[0])
-// 	num := 0
-// 	for p, eps := range pepsMap {
-// 		switch p {
-// 		case "default":
-// 			if eps["udp"] == "127.0.0.1:8080" {
-// 				num++
-// 			} else {
-// 				t.Errorf("getPlaneEpsMap failed %+v", pepsMap)
-// 			}
-// 		case "fabric":
-// 			if eps["tcp"] == "192.168.0.1:80" {
-// 				num++
-// 			} else {
-// 				t.Errorf("getPlaneEpsMap failed %+v", pepsMap)
-// 			}
-// 		case "om":
-// 			if eps["tcp"] == "172.16.0.1:808" {
-// 				num++
-// 			} else {
-// 				t.Errorf("getPlaneEpsMap failed %+v", pepsMap)
-// 			}
+	testCvsSvc.ServiceId = ""
+	serviceId, err := monitor.client.RegisterService(&testCvsSvc)
+	if err != nil {
+		t.Errorf("RegisterService failed, %v", err)
+		return
+	}
+	defer monitor.client.UnregisterMicroService(serviceId)
 
-// 		}
-// 	}
-// 	if num != 3 {
-// 		t.Errorf("getPlaneEpsMap failed(%d) %+q", num, pepsMap)
-// 	}
-// }
+	instIds := []string{}
 
-// func TestConvertService(t *testing.T) {
-// 	ss := convertService(&svc, instps)
+	for _, inst := range testCvsInsts {
+		inst.ServiceId = serviceId
+		inst.InstanceId = ""
+		instId, err := monitor.client.RegisterMicroServiceInstance(&inst)
+		if err != nil {
+			t.Errorf("RegisterMicroServiceInstance failed, %v", err)
+		}
+		instIds = append(instIds, instId)
+	}
 
-// 	if len(ss) != 3 {
-// 		t.Errorf("convertService failed, %+v", ss)
-// 	}
-// 	num := 0
-// 	for _, s := range ss {
-// 		switch s.Hostname {
-// 		case "default.test.appid.__v0_0_1":
-// 			if s.Address == "0.0.0.0" && s.Ports[0].Port == 8080 {
-// 				num++
-// 			}
-// 		case "fabric.test.appid.__v0_0_1":
-// 			if s.Address == "0.0.0.0" && s.Ports[0].Port == 80 {
-// 				num++
-// 			}
-// 		case "om.test.appid.__v0_0_1":
-// 			if s.Address == "0.0.0.0" && s.Ports[0].Port == 808 {
-// 				num++
-// 			}
-// 		}
-// 	}
-// 	if num != 3 {
-// 		t.Errorf("convertService failed, matchnum:%d, %+v", num, ss)
-// 	}
+	defer func() {
+		for _, instid := range instIds {
+			_, _ = monitor.client.UnregisterMicroServiceInstance(serviceId, instid)
+		}
+	}()
 
-// }
+	stop := make(chan struct{})
+	monitor.Start(stop)
+	defer close(stop)
 
-// func TestConvertInstance(t *testing.T) {
-// 	ss := convertService(&svc, instps)
-// 	for _, s := range ss {
-// 		for _, ins := range instps {
-// 			instances := convertInstance(s, ins)
-// 			if len(instances) != 1 {
-// 				t.Errorf("convertInstance failed, %+v", instances)
-// 			}
-// 			if instances[0].Endpoint.Labels["serviceid"] != "serviceid" ||
-// 				(instances[0].Endpoint.EndpointPort != 8080 && instances[0].Endpoint.EndpointPort != 808 && instances[0].Endpoint.EndpointPort != 80) {
-// 				t.Errorf("convertInstance failed, %v", instances[0].Endpoint)
-// 			}
+	if len(instIds) == 0 {
+		t.Errorf("RegisterMicroServiceInstance failed, no instance in registry")
+	}
 
-// 		}
-// 	}
+	svcNum := len(monitor.services)
 
-// }
+	combSvcNum := 0
+	for _, v := range monitor.combSvc {
+		combSvcNum += len(v)
+	}
 
-// func TestServiceHostnameSuffix(t *testing.T) {
-// 	suffix := serviceHostnameSuffix(&svc)
-// 	if suffix != fmt.Sprintf("%s.%s.__v%s", svc.ServiceName, svc.AppId, strings.ReplaceAll(svc.Version, ".", "_")) {
-// 		t.Errorf("ServiceHostnameSuffix failed, %s", suffix)
-// 	}
-// }
+	if combSvcNum != svcNum {
+		t.Errorf("initCache failed, services:%+v, combSvc: %+v", monitor.services, monitor.combSvc)
+	}
 
-// func TestServiceHostname(t *testing.T) {
-// 	out := serviceHostname("base", "svc.app.__v1.1.1")
-// 	if string(out) != "base.svc.app.__v1.1.1" {
-// 		t.Errorf("TestServiceHostname failed, %s", string(out))
-// 	}
-// }
+	if len(monitor.serviceInstances) < combSvcNum {
+		t.Errorf("initCache failed, mointor.serviceInstances: %+v", monitor.serviceInstances)
+	}
 
-// func TestParseHostName(t *testing.T) {
-// 	hostname := host.Name("base.svc.appid.__v0.0.1")
-// 	plane, svcName, appID, err := parseHostName(hostname)
-// 	if plane != "base" || svcName != "svc" || appID != "appid" || err != nil {
-// 		t.Errorf("TestParseHostName failed, %s-%s-%s, %v", plane, svcName, appID, err)
-// 	}
-// }
+}

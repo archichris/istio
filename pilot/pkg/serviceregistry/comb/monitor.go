@@ -29,25 +29,23 @@ import (
 	"istio.io/pkg/log"
 )
 
-// Monitor handles service and instance changes
-type Monitor interface {
-	Start(<-chan struct{})
-	AppendServiceHandler(func(*model.Service, model.Event))
-	AppendInstanceHandler(func(*model.ServiceInstance, model.Event))
-}
-
-// // InstanceHandler processes service instance change events
-// type InstanceHandler func(instance *api.CatalogService, event model.Event) error
-
-// // ServiceHandler processes service change events
-// type ServiceHandler func(instances []*api.CatalogService, event model.Event) error
+var (
+	monitorSvc = proto.MicroService{
+		AppId:       "default",
+		ServiceName: "IstioMonitor",
+		Version:     "0.0.1",
+	}
+	excludeSvcNames = map[string]bool{
+		monitorSvc.ServiceName: true,
+		"SERVICECENTER":        true,
+	}
+)
 
 type combMonitor struct {
-	discovery *client.RegistryClient
-	// instanceHandlers []InstanceHandler
-	// serviceHandlers  []ServiceHandler
-	services         map[string]*model.Service //key hostname value service
-	servicesList     []*model.Service
+	client     *client.RegistryClient
+	consumerId string
+	services   map[string]*model.Service //key hostname value service
+	// servicesList     []*model.Service
 	serviceInstances map[string][]*model.ServiceInstance //key hostname value serviceInstance array
 	cacheMutex       sync.Mutex
 	initDone         bool
@@ -57,23 +55,75 @@ type combMonitor struct {
 }
 
 const (
-	// refreshIdleTime    time.Duration = 5 * time.Second
 	periodicCheckTime time.Duration = 2 * time.Second
-	// blockQueryWaitTime time.Duration = 10 * time.Minute
 )
 
 // NewCombMonitor watches for changes in Consul services and CatalogServices
-func NewCombMonitor(client *client.RegistryClient) Monitor {
+func NewCombMonitor(opt *client.Options) (*combMonitor, error) {
+	r := &client.RegistryClient{}
+	err := r.Initialize(*opt)
+	if err != nil {
+		return nil, err
+	}
 	return &combMonitor{
-		discovery:        client,
-		services:         make(map[string]*model.Service),
-		servicesList:     make([]*model.Service, 0),
+		client:   r,
+		services: make(map[string]*model.Service),
+		// servicesList:     []*model.Service{},
 		serviceInstances: make(map[string][]*model.ServiceInstance),
 		initDone:         false,
 		combSvc:          make(map[string][]string),
 		svcHandlers:      make([]func(*model.Service, model.Event), 0),
 		instHandlers:     make([]func(*model.ServiceInstance, model.Event), 0),
+	}, nil
+}
+
+func (m *combMonitor) regSelf() error {
+	svcId, err := m.client.RegisterService(&monitorSvc)
+	if err != nil {
+		log.Errorf("Register self service failed, %v", err)
+		return err
 	}
+	m.consumerId = svcId
+	return nil
+}
+
+func (m *combMonitor) serviceAddHandler(service *proto.MicroService) error {
+
+	if _, ok := excludeSvcNames[service.ServiceName]; ok {
+		return nil
+	}
+
+	endpoints, err := m.client.GetMicroServiceInstances(m.consumerId, service.ServiceId)
+	if err != nil {
+		log.Errorf("GetMicroServiceInstances failed, err: %v", err)
+		return err
+	} else if endpoints == nil {
+		log.Warnf("%s have no instance", service.ServiceName)
+		return nil
+	}
+
+	svcs := convertService(service, endpoints)
+	for _, svc := range svcs {
+		m.services[string(svc.Hostname)] = svc
+		m.combSvc[service.ServiceId] = append(m.combSvc[service.ServiceId], string(svc.Hostname))
+		instances := []*model.ServiceInstance{}
+		for _, endpoint := range endpoints {
+			if endpoint.Status == "UP" {
+				instances = append(instances, convertInstance(svc, endpoint)...)
+			}
+		}
+		m.serviceInstances[string(svc.Hostname)] = instances
+	}
+	return nil
+}
+
+func (m *combMonitor) serviceDelHandler(id string) {
+	hostnames := m.combSvc[id]
+	for _, hostname := range hostnames {
+		delete(m.serviceInstances, hostname)
+		delete(m.services, hostname)
+	}
+	delete(m.combSvc, id)
 }
 
 func (m *combMonitor) initCache() error {
@@ -85,47 +135,50 @@ func (m *combMonitor) initCache() error {
 	m.combSvc = make(map[string][]string)
 
 	// get all services from servicecomb
-	services, err := m.discovery.GetAllMicroServices()
+	services, err := m.client.GetAllMicroServices()
 	if err != nil {
 		return err
 	}
 
 	for _, service := range services {
-		// get endpoints of a service from consul
-
-		endpoints, err := m.discovery.GetMicroServiceInstances("0", service.ServiceId)
-		if err != nil {
-			return err
-		}
-
-		svcs := convertService(service, endpoints)
-		for _, svc := range svcs {
-			m.services[string(svc.Hostname)] = svc
-			m.combSvc[service.ServiceId] = append(m.combSvc[service.ServiceId], string(svc.Hostname))
-			instances := []*model.ServiceInstance{}
-			// instances := make([]*model.ServiceInstance, len(endpoints))
-			for _, endpoint := range endpoints {
-				// for _, instance := range convertInstance(svc, endpoint) {
-				instances = append(instances, convertInstance(svc, endpoint)...)
-			}
-			m.serviceInstances[string(svc.Hostname)] = instances
+		err := m.serviceAddHandler(service)
+		if err == nil {
+			m.initDone = true
 		}
 	}
-
-	m.servicesList = make([]*model.Service, 0, len(m.services))
-	for _, value := range m.services {
-		m.servicesList = append(m.servicesList, value)
-	}
-
-	m.initDone = true
 	return nil
 }
 
 func (m *combMonitor) Start(stop <-chan struct{}) {
-	m.initCache()
+	err := m.regSelf()
+	if err == nil {
+		_ = m.initCache()
+	}
 	change := make(chan struct{})
 	go m.watchComb(change, stop)
-	// go m.updateRecord(change, stop)
+}
+
+func (m *combMonitor) SyncSvc() ([]*proto.MicroService, []string, error) {
+	services, err := m.client.GetAllMicroServices()
+	if err != nil {
+		log.Errorf("GetAllMicroServices failed, %v", err)
+		return nil, nil, err
+	}
+	svcCur := map[string]bool{}
+	addServices := []*proto.MicroService{}
+	delServiceIds := []string{}
+	for _, service := range services {
+		if _, ok := m.combSvc[service.ServiceId]; !ok {
+			addServices = append(addServices, service)
+		}
+		svcCur[service.ServiceId] = true
+	}
+	for id := range m.combSvc {
+		if _, ok := svcCur[id]; !ok {
+			delServiceIds = append(delServiceIds, id)
+		}
+	}
+	return addServices, delServiceIds, nil
 }
 
 func (m *combMonitor) watchComb(change chan struct{}, stop <-chan struct{}) {
@@ -134,60 +187,39 @@ func (m *combMonitor) watchComb(change chan struct{}, stop <-chan struct{}) {
 		case <-stop:
 			return
 		default:
-			services, err := m.discovery.GetAllMicroServices()
+			err := m.regSelf()
 			if err != nil {
-				log.Errorf("GetAllMicroServices failed, %v", err)
 				continue
 			}
-			svcCur := map[string]bool{}
-			for _, service := range services {
-				m.discovery.WatchMicroService(service.ServiceId, m.watch)
-				if _, ok := m.combSvc[service.ServiceId]; !ok {
-					m.serviceAdd(service)
-				}
-				svcCur[service.ServiceId] = true
+
+			if m.initCache() != nil {
+				continue
 			}
-			for id := range m.combSvc {
-				if _, ok := svcCur[id]; !ok {
-					m.serviceDel(id)
+
+			addSvcs, delSvcIds, err := m.SyncSvc()
+			if err != nil {
+				continue
+			}
+
+			for _, svc := range addSvcs {
+				err = m.serviceAddHandler(svc)
+				if err != nil {
+					log.Errorf("serviceAddHandler failed, %v", err)
+					continue
 				}
+				err = m.client.WatchMicroService(svc.ServiceId, m.watchIns)
+				if err != nil {
+					log.Errorf("WatchMicroService failed, %v", err)
+					continue
+				}
+			}
+
+			for _, id := range delSvcIds {
+				m.serviceDelHandler(id)
 			}
 			time.Sleep(periodicCheckTime)
 		}
 	}
-}
-
-func (m *combMonitor) serviceAdd(service *proto.MicroService) error {
-
-	endpoints, err := m.discovery.GetMicroServiceInstances("0", service.ServiceId)
-	if err != nil {
-		return err
-	}
-
-	svcs := convertService(service, endpoints)
-	for _, svc := range svcs {
-		m.services[string(svc.Hostname)] = svc
-		m.combSvc[service.ServiceId] = append(m.combSvc[service.ServiceId], string(svc.Hostname))
-		instances := []*model.ServiceInstance{}
-		// instances := make([]*model.ServiceInstance, len(endpoints))
-		for _, endpoint := range endpoints {
-			// for _, instance := range convertInstance(svc, endpoint) {
-			instances = append(instances, convertInstance(svc, endpoint)...)
-		}
-		m.serviceInstances[string(svc.Hostname)] = instances
-		m.servicesList = append(m.servicesList, svc)
-	}
-	return nil
-}
-
-func (m *combMonitor) serviceDel(id string) error {
-	hostnames := m.combSvc[id]
-	for _, hostname := range hostnames {
-		delete(m.serviceInstances, hostname)
-		delete(m.services, hostname)
-	}
-	delete(m.combSvc, id)
-	return nil
 }
 
 func (m *combMonitor) AppendServiceHandler(h func(*model.Service, model.Event)) {
@@ -199,29 +231,25 @@ func (m *combMonitor) AppendInstanceHandler(h func(*model.ServiceInstance, model
 }
 
 // watch watching micro-service instance status
-func (m *combMonitor) watch(response *client.MicroServiceInstanceChangedEvent) {
+func (m *combMonitor) watchIns(response *client.MicroServiceInstanceChangedEvent) {
 	if response.Instance.Status != client.MSInstanceUP {
 		response.Action = common.Delete
 	}
 	switch response.Action {
 	case client.EventCreate:
-		m.createAction(response)
-		break
+		m.insCreateAction(response)
 	case client.EventDelete:
-		m.deleteAction(response)
-		break
+		m.insDeleteAction(response)
 	case client.EventUpdate:
-		m.updateAction(response)
-		break
+		m.insUpdateAction(response)
 	default:
 		log.Warnf("Do not support this Action = %s", response.Action)
-		return
 	}
 }
 
 // createAction added micro-service instance to the cache
-func (m *combMonitor) createAction(response *client.MicroServiceInstanceChangedEvent) {
-	id := response.Instance.InstanceId
+func (m *combMonitor) insCreateAction(response *client.MicroServiceInstanceChangedEvent) {
+	id := response.Instance.ServiceId
 	hostnames := m.combSvc[id]
 	for _, hostname := range hostnames {
 		instances := convertInstance(m.services[hostname], response.Instance)
@@ -235,9 +263,9 @@ func (m *combMonitor) createAction(response *client.MicroServiceInstanceChangedE
 }
 
 // deleteAction delete micro-service instance
-func (m *combMonitor) deleteAction(response *client.MicroServiceInstanceChangedEvent) {
+func (m *combMonitor) insDeleteAction(response *client.MicroServiceInstanceChangedEvent) {
 
-	id := response.Instance.InstanceId
+	id := response.Instance.ServiceId
 	hostnames := m.combSvc[id]
 
 	for _, hostname := range hostnames {
@@ -259,24 +287,47 @@ func (m *combMonitor) deleteAction(response *client.MicroServiceInstanceChangedE
 }
 
 // updateAction update micro-service instance event
-func (m *combMonitor) updateAction(response *client.MicroServiceInstanceChangedEvent) {
-	id := response.Instance.InstanceId
+func (m *combMonitor) insUpdateAction(response *client.MicroServiceInstanceChangedEvent) {
+	id := response.Instance.ServiceId
 	hostnames := m.combSvc[id]
 	for _, hostname := range hostnames {
 		instances := m.serviceInstances[hostname]
 		instanceCurs := convertInstance(m.services[hostname], response.Instance)
 		for i, instance := range instances {
+			find := false
 			for _, instCur := range instanceCurs {
 				if instance.Endpoint.Labels["instanceid"] == instCur.Endpoint.Labels["instanceid"] &&
 					instance.Endpoint.ServicePortName == instCur.Endpoint.ServicePortName &&
 					instance.Endpoint.EndpointPort == instCur.Endpoint.EndpointPort {
 					instances[i] = instCur
+					find = true
 					for _, f := range m.instHandlers {
 						f(instCur, model.EventUpdate)
 					}
 					break
 				}
 			}
+			if !find {
+				m.insCreateAction(response)
+			}
 		}
 	}
+}
+
+func (m *combMonitor) Services() ([]*model.Service, error) {
+	m.cacheMutex.Lock()
+	defer m.cacheMutex.Unlock()
+
+	err := m.initCache()
+
+	if err != nil {
+		return nil, err
+	}
+
+	servicesList := make([]*model.Service, 0, len(m.services))
+	for _, value := range m.services {
+		servicesList = append(servicesList, value)
+	}
+
+	return servicesList, nil
 }
