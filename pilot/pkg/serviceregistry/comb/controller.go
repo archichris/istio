@@ -42,7 +42,6 @@ var (
 
 // Controller communicates with Consul and monitors for changes
 type Controller struct {
-	// client    *client.RegistryClient
 	monitor   *combMonitor
 	clusterID string
 }
@@ -124,11 +123,6 @@ func (c *Controller) InstancesByPort(svc *model.Service, port int,
 	c.monitor.cacheMutex.Lock()
 	defer c.monitor.cacheMutex.Unlock()
 
-	// err := c.initCache()
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	if serviceInstances, ok := c.monitor.serviceInstances[string(svc.Hostname)]; ok {
 		var instances []*model.ServiceInstance
 		for _, instance := range serviceInstances {
@@ -204,21 +198,11 @@ func (c *Controller) AppendServiceHandler(f func(*model.Service, model.Event)) e
 	return nil
 }
 
-// func (c *Controller) serviceHandler(serviceID string, *instance registry.MicroServiceInstance, event string) error {
-// 	// convertEven
-// 	return nil
-// }
-
 // AppendInstanceHandler implements a service catalog operation
 func (c *Controller) AppendInstanceHandler(f func(*model.ServiceInstance, model.Event)) error {
 	c.monitor.instHandlers = append(c.monitor.instHandlers, f)
 	return nil
 }
-
-// func (c *Controller) instanceHandler(serviceID string, *instance registry.MicroServiceInstance, event string) error {
-// 	// convertEven
-// 	return nil
-// }
 
 // GetIstioServiceAccounts implements model.ServiceAccounts operation TODO
 func (c *Controller) GetIstioServiceAccounts(svc *model.Service, ports []int) []string {
@@ -226,63 +210,3 @@ func (c *Controller) GetIstioServiceAccounts(svc *model.Service, ports []int) []
 		spiffe.MustGenSpiffeURI("default", "default"),
 	}
 }
-
-// func (c *Controller) initCache() error {
-// 	if c.initDone {
-// 		return nil
-// 	}
-// 	c.services = make(map[string]*model.Service)
-// 	c.serviceInstances = make(map[string][]*model.ServiceInstance)
-// 	c.combSvc = make(map[string][]string)
-// 	c.combInst = make(map[string][]string)
-
-// 	// get all services from servicecomb
-// 	services, err := ((*servicecenter.ServiceDiscovery)(c.discover)).GetAllMicroServices()
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	for _, service := range services {
-// 		// get endpoints of a service from consul
-
-// 		endpoints, err := c.discover.GetMicroServiceInstances("0", service.ServiceID)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		svcs := convertService(service, endpoints)
-// 		for _, svc := range svcs {
-// 			c.services[string(svc.Hostname)] = svc
-// 			c.combSvc[service.ServiceID] = append(c.combSvc[service.ServiceID], string(svc.Hostname))
-// 			instances := []*model.ServiceInstance{}
-// 			// instances := make([]*model.ServiceInstance, len(endpoints))
-// 			for _, endpoint := range endpoints {
-// 				// for _, instance := range convertInstance(svc, endpoint) {
-// 				instances = append(instances, convertInstance(svc, endpoint)...)
-// 				c.combInst[service.ServiceID] = append(c.combInst[service.ServiceID], endpoint.InstanceID)
-// 			}
-// 			c.serviceInstances[string(svc.Hostname)] = instances
-// 		}
-// 	}
-
-// 	c.initDone = true
-// 	return nil
-// }
-
-// func (c *Controller) refreshCache() {
-// 	c.cacheMutex.Lock()
-// 	defer c.cacheMutex.Unlock()
-// 	c.initDone = false
-// }
-
-// // InstanceChanged instances event callback
-// func (c *Controller) InstanceChanged(instance []*registry.MicroServiceInstance, event model.Event) error {
-// 	c.refreshCache()
-// 	return nil
-// }
-
-// // ServiceChanged services event callback
-// func (c *Controller) ServiceChanged(service []*registry.MicroService, event model.Event) error {
-// 	c.refreshCache()
-// 	return nil
-// }
