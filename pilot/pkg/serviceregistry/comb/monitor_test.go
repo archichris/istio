@@ -121,6 +121,9 @@ func TestServiceAddDelHandler(t *testing.T) {
 	defer m.client.UnregisterMicroServiceInstance(svcId, instId)
 
 	fmt.Printf("*************** test serviceAddHandler ***************\n")
+
+	time.Sleep(periodicCheckTime)
+
 	s := testCvsSvc
 	s.ServiceId = svcId
 
@@ -146,16 +149,19 @@ func TestServiceAddDelHandler(t *testing.T) {
 		_, ok := m.services[hostname]
 		if !ok {
 			t.Errorf("serviceAddHandler failed, service of %v not exist", hostname)
+			return
 		}
 
 		insts, ok := m.serviceInstances[hostname]
 		if !ok {
 			t.Errorf("serviceAddHandler failed, instance of %v not exist", hostname)
+			return
 		}
 
 		for _, inst := range insts {
 			if inst.Endpoint.Labels["serviceid"] != svcId || inst.Endpoint.Labels["instanceid"] != instId {
-				t.Errorf("serviceAddHandler failed, %v", inst.Endpoint)
+				t.Errorf("serviceAddHandler failed, expect:%v-%v,reality:%v-%v", svcId, instId, inst.Endpoint.Labels["serviceid"], inst.Endpoint.Labels["instanceid"])
+				return
 			}
 		}
 	}

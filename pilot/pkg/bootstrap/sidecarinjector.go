@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"k8s.io/api/admissionregistration/v1beta1"
@@ -49,6 +50,9 @@ const (
 func (s *Server) initSidecarInjector(args *PilotArgs) error {
 	// Injector should run along, even if not used - but only if the injection template is mounted.
 	// ./var/lib/istio/inject - enabled by mounting a template in the config.
+	if strings.ToLower(os.Getenv("ENABLE_INJECTOR")) == "false" {
+		return nil
+	}
 	injectPath := args.InjectionOptions.InjectionDirectory
 	if injectPath == "" {
 		log.Infof("Skipping sidecar injector, injection path is missing")

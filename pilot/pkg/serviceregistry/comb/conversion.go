@@ -180,9 +180,9 @@ func convertInstance(service *model.Service, combInstance *proto.MicroServiceIns
 	return instances
 }
 
-// serviceHostname produces FQDN for a consul service
+// serviceHostname produces FQDN for a servicecomb
 func serviceHostnameSuffix(service *proto.MicroService) string {
-	return fmt.Sprintf("%s.%s.__v%s", service.ServiceName, service.AppId, strings.ReplaceAll(service.Version, ".", "_"))
+	return fmt.Sprintf("%s.%s.__v%s.svc.comb", service.ServiceName, service.AppId, strings.ReplaceAll(service.Version, ".", "_"))
 }
 
 func serviceHostname(plane, suffix string) host.Name {

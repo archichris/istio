@@ -226,6 +226,18 @@ func TestPilotDefaultDomainConsul(t *testing.T) {
 	g.Expect(domain).To(gomega.Equal("service.consul"))
 }
 
+//for servicecomb
+func TestPilotDefaultDomainComb(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	role := &model.Proxy{}
+	role.DNSDomain = ""
+	registryID = serviceregistry.Comb
+
+	domain := getDNSDomain("", role.DNSDomain)
+
+	g.Expect(domain).To(gomega.Equal("svc.comb"))
+}
+
 func TestPilotDefaultDomainOthers(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	role = &model.Proxy{}
@@ -268,6 +280,21 @@ func TestPilotSanIfAuthenticationMutualStdDomainConsul(t *testing.T) {
 	role.DNSDomain = "service.consul"
 	trustDomain = ""
 	registryID = serviceregistry.Consul
+	controlPlaneAuthPolicy = meshconfig.AuthenticationPolicy_MUTUAL_TLS.String()
+
+	setSpiffeTrustDomain("", role.DNSDomain)
+	pilotSAN := getSAN("anything", envoy.PilotSvcAccName, pilotIdentity)
+
+	g.Expect(pilotSAN).To(gomega.Equal([]string{"spiffe:///ns/anything/sa/istio-pilot-service-account"}))
+}
+
+//for servicecomb
+func TestPilotSanIfAuthenticationMutualStdDomainComb(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	role = &model.Proxy{}
+	role.DNSDomain = "svc.comb"
+	trustDomain = ""
+	registryID = serviceregistry.Comb
 	controlPlaneAuthPolicy = meshconfig.AuthenticationPolicy_MUTUAL_TLS.String()
 
 	setSpiffeTrustDomain("", role.DNSDomain)

@@ -26,16 +26,6 @@ import (
 )
 
 var (
-	// goodLabels = []string{
-	// 	"key1|val1",
-	// 	"version|v1",
-	// }
-
-	// badLabels = []string{
-	// 	"badtag",
-	// 	"goodtag|goodvalue",
-	// }
-
 	testCvsSvc = proto.MicroService{
 		ServiceId:   "serviceid",
 		AppId:       "default",
@@ -165,15 +155,15 @@ func TestConvertService(t *testing.T) {
 	num := 0
 	for _, s := range ss {
 		switch s.Hostname {
-		case "default.test.default.__v0_0_1":
+		case "default.test.default.__v0_0_1.svc.comb":
 			if s.Address == "0.0.0.0" && s.Ports[0].Port == 8080 {
 				num++
 			}
-		case "fabric.test.default.__v0_0_1":
+		case "fabric.test.default.__v0_0_1.svc.comb":
 			if s.Address == "0.0.0.0" && s.Ports[0].Port == 80 {
 				num++
 			}
-		case "om.test.default.__v0_0_1":
+		case "om.test.default.__v0_0_1.svc.comb":
 			if s.Address == "0.0.0.0" && s.Ports[0].Port == 808 {
 				num++
 			}
@@ -205,20 +195,20 @@ func TestConvertInstance(t *testing.T) {
 
 func TestServiceHostnameSuffix(t *testing.T) {
 	suffix := serviceHostnameSuffix(&testCvsSvc)
-	if suffix != fmt.Sprintf("%s.%s.__v%s", testCvsSvc.ServiceName, testCvsSvc.AppId, strings.ReplaceAll(testCvsSvc.Version, ".", "_")) {
+	if suffix != fmt.Sprintf("%s.%s.__v%s.svc.comb", testCvsSvc.ServiceName, testCvsSvc.AppId, strings.ReplaceAll(testCvsSvc.Version, ".", "_")) {
 		t.Errorf("ServiceHostnameSuffix failed, %s", suffix)
 	}
 }
 
 func TestServiceHostname(t *testing.T) {
-	out := serviceHostname("base", "svc.default.__v1.1.1")
-	if string(out) != "base.svc.default.__v1.1.1" {
+	out := serviceHostname("base", "svc.default.__v1_1_1.svc.comb")
+	if string(out) != "base.svc.default.__v1_1_1.svc.comb" {
 		t.Errorf("TestServiceHostname failed, %s", string(out))
 	}
 }
 
 func TestParseHostName(t *testing.T) {
-	hostname := host.Name("base.svc.default.__v0.0.1")
+	hostname := host.Name("base.svc.default.__v0_0_1.svc.comb")
 	plane, svcName, appID, err := parseHostName(hostname)
 	if plane != "base" || svcName != "svc" || appID != "default" || err != nil {
 		t.Errorf("TestParseHostName failed, %s-%s-%s, %v", plane, svcName, appID, err)

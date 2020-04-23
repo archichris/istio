@@ -27,6 +27,7 @@ import (
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/spiffe"
+	"istio.io/pkg/log"
 )
 
 var _ serviceregistry.Instance = &Controller{}
@@ -60,8 +61,9 @@ func NewController(addr string, clusterID string) (*Controller, error) {
 	}
 	opt.Addrs = []string{address}
 
-	monitor, err := NewCombMonitor(&opt)
+	log.Infof("[Comb] ServiceCenter address: %v", opt.Addrs)
 
+	monitor, err := NewCombMonitor(&opt)
 	if err != nil {
 		return nil, err
 	}

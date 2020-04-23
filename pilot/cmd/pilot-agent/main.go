@@ -211,6 +211,8 @@ var (
 					role.ID = podName + "." + podNamespace
 				} else if registryID == serviceregistry.Consul {
 					role.ID = role.IPAddresses[0] + ".service.consul"
+				} else if registryID == serviceregistry.Comb {
+					role.ID = role.IPAddresses[0] + ".svc.comb"
 				} else {
 					role.ID = role.IPAddresses[0]
 				}
@@ -614,6 +616,9 @@ func setSpiffeTrustDomain(podNamespace string, domain string) {
 			} else if registryID == serviceregistry.Consul &&
 				(domain == "service.consul" || domain == "") {
 				pilotTrustDomain = ""
+			} else if registryID == serviceregistry.Comb &&
+				(domain == "svc.comb" || domain == "") {
+				pilotTrustDomain = ""
 			} else {
 				pilotTrustDomain = domain
 			}
@@ -642,6 +647,8 @@ func getDNSDomain(podNamespace, domain string) string {
 			domain = podNamespace + ".svc.cluster.local"
 		} else if registryID == serviceregistry.Consul {
 			domain = "service.consul"
+		} else if registryID == serviceregistry.Comb {
+			domain = "svc.comb"
 		} else {
 			domain = ""
 		}
@@ -729,8 +736,8 @@ func appendTLSCerts(rs *meshconfig.RemoteService) {
 func init() {
 	proxyCmd.PersistentFlags().StringVar((*string)(&registryID), "serviceregistry",
 		string(serviceregistry.Kubernetes),
-		fmt.Sprintf("Select the platform for service registry, options are {%s, %s, %s}",
-			serviceregistry.Kubernetes, serviceregistry.Consul, serviceregistry.Mock))
+		fmt.Sprintf("Select the platform for service registry, options are {%s, %s, %s, %s}",
+			serviceregistry.Kubernetes, serviceregistry.Consul, serviceregistry.Mock, serviceregistry.Comb))
 	proxyCmd.PersistentFlags().StringVar(&proxyIP, "ip", "",
 		"Proxy IP address. If not provided uses ${INSTANCE_IP} environment variable.")
 	proxyCmd.PersistentFlags().StringVar(&role.ID, "id", "",
