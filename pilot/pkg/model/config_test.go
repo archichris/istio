@@ -319,14 +319,14 @@ func TestResolveHostname(t *testing.T) {
 		//for servicecomb
 		{
 			meta: model.ConfigMeta{Namespace: "foo", Domain: "foo"},
-			svc: &mccpb.IstioService{Name: "hello", Service: "reviews.svc.comb",
+			svc: &mccpb.IstioService{Name: "hello", Service: "reviews.cluster.local",
 				Namespace: "default", Domain: "svc.cluster.local"},
-			want: "reviews.svc.comb",
+			want: "reviews.cluster.local",
 		},
 		{
 			meta: model.ConfigMeta{Namespace: "default", Domain: "cluster.local"},
-			svc:  &mccpb.IstioService{Service: "reviews.svc.comb"},
-			want: "reviews.svc.comb",
+			svc:  &mccpb.IstioService{Service: "reviews.cluster.local"},
+			want: "reviews.cluster.local",
 		},
 		{
 			meta: model.ConfigMeta{Namespace: "default", Domain: "cluster.local"},

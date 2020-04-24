@@ -103,7 +103,7 @@ func convertService(service *proto.MicroService, instances []*proto.MicroService
 		ports := make(map[int]model.Port)
 		for _, port := range ps {
 			if svcPort, exists := ports[port.Port]; exists && svcPort.Protocol != port.Protocol {
-				log.Warnf("Service %v has two instances on same port %v but different protocols (%v, %v)", name, port.Port, svcPort.Protocol, port.Protocol)
+				log.Warnf("[Comb] Service %v has two instances on same port %v but different protocols (%v, %v)", name, port.Port, svcPort.Protocol, port.Protocol)
 			} else {
 				ports[port.Port] = port
 			}
@@ -130,12 +130,6 @@ func convertService(service *proto.MicroService, instances []*proto.MicroService
 	return svcs
 }
 
-// type dataCenterInfo struct {
-// 	Name          string `json:"name"`
-// 	Region        string `json:"region"`
-// 	AvailableZone string `json:"az"`
-// }
-
 func convertInstance(service *model.Service, combInstance *proto.MicroServiceInstance) []*model.ServiceInstance {
 
 	svcLabels := map[string]string{}
@@ -151,7 +145,7 @@ func convertInstance(service *model.Service, combInstance *proto.MicroServiceIns
 	}
 
 	pepsMap := getPlaneEpsMap(combInstance)
-	planeName, _, _, _ := parseHostName(service.Hostname)
+	planeName, _, _, _, _ := parseHostName(service.Hostname)
 	endpoints := pepsMap[planeName]
 	instances := []*model.ServiceInstance{}
 	for p, endpoint := range endpoints {
@@ -182,24 +176,24 @@ func convertInstance(service *model.Service, combInstance *proto.MicroServiceIns
 
 // serviceHostname produces FQDN for a servicecomb
 func serviceHostnameSuffix(service *proto.MicroService) string {
-	return fmt.Sprintf("%s.%s.__v%s.svc.comb", service.ServiceName, service.AppId, strings.ReplaceAll(service.Version, ".", "_"))
+	return fmt.Sprintf("svc%s__app%s__v%s.cluster.local", service.ServiceName, service.AppId, strings.ReplaceAll(service.Version, ".", "_"))
 }
 
 func serviceHostname(plane, suffix string) host.Name {
-	return host.Name(fmt.Sprintf("%s.%s", plane, suffix))
+	return host.Name(fmt.Sprintf("%s__%s", plane, suffix))
 }
 
-func parseHostName(hostname host.Name) (plane, svcName, appID string, err error) {
+func parseHostName(hostname host.Name) (string, string, string, string, error) {
 	parts := strings.Split(string(hostname), ".")
-	if len(parts) < 4 {
-		err = fmt.Errorf("missing service name from the service hostname %q", hostname)
-		return
+	if len(parts) < 1 {
+		return "", "", "", "", fmt.Errorf("hostname format is not right %q", hostname)
 	}
-	plane = parts[0]
-	svcName = parts[1]
-	appID = parts[2]
-	err = nil
-	return
+	ps := strings.Split(parts[0], "__")
+	if len(ps) != 4 {
+		return "", "", "", "", fmt.Errorf("hostname format is not right %q", parts[0])
+	}
+	return ps[0], strings.TrimPrefix(ps[1], "svc"),
+		strings.TrimPrefix(ps[2], "app"), strings.TrimPrefix(ps[3], "v"), nil
 }
 
 func convertProtocol(name string) protocol.Instance {

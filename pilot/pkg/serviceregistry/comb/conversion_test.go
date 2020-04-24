@@ -155,15 +155,15 @@ func TestConvertService(t *testing.T) {
 	num := 0
 	for _, s := range ss {
 		switch s.Hostname {
-		case "default.test.default.__v0_0_1.svc.comb":
+		case "default__svctest__appdefault__v0_0_1.cluster.local":
 			if s.Address == "0.0.0.0" && s.Ports[0].Port == 8080 {
 				num++
 			}
-		case "fabric.test.default.__v0_0_1.svc.comb":
+		case "fabric__svctest__appdefault__v0_0_1.cluster.local":
 			if s.Address == "0.0.0.0" && s.Ports[0].Port == 80 {
 				num++
 			}
-		case "om.test.default.__v0_0_1.svc.comb":
+		case "om__svctest__appdefault__v0_0_1.cluster.local":
 			if s.Address == "0.0.0.0" && s.Ports[0].Port == 808 {
 				num++
 			}
@@ -195,22 +195,22 @@ func TestConvertInstance(t *testing.T) {
 
 func TestServiceHostnameSuffix(t *testing.T) {
 	suffix := serviceHostnameSuffix(&testCvsSvc)
-	if suffix != fmt.Sprintf("%s.%s.__v%s.svc.comb", testCvsSvc.ServiceName, testCvsSvc.AppId, strings.ReplaceAll(testCvsSvc.Version, ".", "_")) {
+	if suffix != fmt.Sprintf("svc%s__app%s__v%s.cluster.local", testCvsSvc.ServiceName, testCvsSvc.AppId, strings.ReplaceAll(testCvsSvc.Version, ".", "_")) {
 		t.Errorf("ServiceHostnameSuffix failed, %s", suffix)
 	}
 }
 
 func TestServiceHostname(t *testing.T) {
-	out := serviceHostname("base", "svc.default.__v1_1_1.svc.comb")
-	if string(out) != "base.svc.default.__v1_1_1.svc.comb" {
+	out := serviceHostname("base", "svcsvc__appdefault__v1_1_1.cluster.local")
+	if string(out) != "base__svcsvc__appdefault__v1_1_1.cluster.local" {
 		t.Errorf("TestServiceHostname failed, %s", string(out))
 	}
 }
 
 func TestParseHostName(t *testing.T) {
-	hostname := host.Name("base.svc.default.__v0_0_1.svc.comb")
-	plane, svcName, appID, err := parseHostName(hostname)
-	if plane != "base" || svcName != "svc" || appID != "default" || err != nil {
+	hostname := host.Name("base__svcsvc__appdefault__v0_0_1.cluster.local")
+	plane, svcName, appID, ver, err := parseHostName(hostname)
+	if plane != "base" || svcName != "svc" || appID != "default" || ver != "0_0_1" || err != nil {
 		t.Errorf("TestParseHostName failed, %s-%s-%s, %v", plane, svcName, appID, err)
 	}
 }

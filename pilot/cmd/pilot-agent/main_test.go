@@ -235,7 +235,7 @@ func TestPilotDefaultDomainComb(t *testing.T) {
 
 	domain := getDNSDomain("", role.DNSDomain)
 
-	g.Expect(domain).To(gomega.Equal("svc.comb"))
+	g.Expect(domain).To(gomega.Equal("cluster.local"))
 }
 
 func TestPilotDefaultDomainOthers(t *testing.T) {
@@ -292,7 +292,7 @@ func TestPilotSanIfAuthenticationMutualStdDomainConsul(t *testing.T) {
 func TestPilotSanIfAuthenticationMutualStdDomainComb(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	role = &model.Proxy{}
-	role.DNSDomain = "svc.comb"
+	role.DNSDomain = "cluster.local"
 	trustDomain = ""
 	registryID = serviceregistry.Comb
 	controlPlaneAuthPolicy = meshconfig.AuthenticationPolicy_MUTUAL_TLS.String()

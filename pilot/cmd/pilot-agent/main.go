@@ -211,8 +211,6 @@ var (
 					role.ID = podName + "." + podNamespace
 				} else if registryID == serviceregistry.Consul {
 					role.ID = role.IPAddresses[0] + ".service.consul"
-				} else if registryID == serviceregistry.Comb {
-					role.ID = role.IPAddresses[0] + ".svc.comb"
 				} else {
 					role.ID = role.IPAddresses[0]
 				}
@@ -617,8 +615,8 @@ func setSpiffeTrustDomain(podNamespace string, domain string) {
 				(domain == "service.consul" || domain == "") {
 				pilotTrustDomain = ""
 			} else if registryID == serviceregistry.Comb &&
-				(domain == "svc.comb" || domain == "") {
-				pilotTrustDomain = ""
+				(domain == podNamespace+".svc.cluster.local" || domain == "") {
+				pilotTrustDomain = "cluster.local"
 			} else {
 				pilotTrustDomain = domain
 			}
@@ -648,7 +646,7 @@ func getDNSDomain(podNamespace, domain string) string {
 		} else if registryID == serviceregistry.Consul {
 			domain = "service.consul"
 		} else if registryID == serviceregistry.Comb {
-			domain = "svc.comb"
+			domain = "cluster.local"
 		} else {
 			domain = ""
 		}

@@ -78,17 +78,21 @@ func NewController(addr string, clusterID string) (*Controller, error) {
 
 // Provider indicate registry type used
 func (c *Controller) Provider() serviceregistry.ProviderID {
+	log.Infof("[dbg][Comb] Provider called, return %v", serviceregistry.Comb)
 	return serviceregistry.Comb
 }
 
 // Cluster return cluster id
 func (c *Controller) Cluster() string {
+	log.Infof("[dbg][Comb] Cluster called, return %v", c.clusterID)
 	return c.clusterID
 }
 
 // Services list declarations of all services in the system
 func (c *Controller) Services() ([]*model.Service, error) {
-	return c.monitor.Services()
+	svcs, err := c.monitor.Services()
+	log.Infof("[dbg][Comb] Services called, return %v, %v", svcs, err)
+	return svcs, err
 }
 
 // GetService retrieves a service by host name if it exists
@@ -96,9 +100,10 @@ func (c *Controller) GetService(hostname host.Name) (*model.Service, error) {
 	c.monitor.cacheMutex.Lock()
 	defer c.monitor.cacheMutex.Unlock()
 	if service, ok := c.monitor.services[string(hostname)]; ok {
+		log.Infof("[dbg][Comb] GetService(%v) called, return %v, nil", hostname, service)
 		return service, nil
 	}
-
+	log.Infof("[dbg][Comb] GetService(%v) called, return nil, nil", hostname)
 	return nil, nil
 }
 
@@ -107,6 +112,7 @@ func (c *Controller) GetService(hostname host.Name) (*model.Service, error) {
 // manage the service instances. In future, when we integrate Nomad, we
 // might revisit this function.
 func (c *Controller) ManagementPorts(addr string) model.PortList {
+	log.Infof("[dbg][Comb] ManagementPorts(%v) called, return nil", addr)
 	return nil
 }
 
@@ -115,6 +121,7 @@ func (c *Controller) ManagementPorts(addr string) model.PortList {
 // manage the service instances. In future, when we integrate Nomad, we
 // might revisit this function.
 func (c *Controller) WorkloadHealthCheckInfo(addr string) model.ProbeList {
+	log.Infof("[dbg][Comb] WorkloadHealthCheckInfo(%v) called, return nil", addr)
 	return nil
 }
 
@@ -132,7 +139,7 @@ func (c *Controller) InstancesByPort(svc *model.Service, port int,
 				instances = append(instances, instance)
 			}
 		}
-
+		log.Infof("[dbg][Comb] InstancesByPort(%v,%v,%v) called, return %v, nil", *svc, port, labels, instances)
 		return instances, nil
 	}
 	return nil, fmt.Errorf("could not find instance of service: %s", string(svc.Hostname))
@@ -162,7 +169,7 @@ func (c *Controller) GetProxyServiceInstances(node *model.Proxy) ([]*model.Servi
 			}
 		}
 	}
-
+	log.Infof("[dbg][Comb] GetProxyServiceInstances(%v) called, return %v, nil", *node, out)
 	return out, nil
 }
 
@@ -185,29 +192,33 @@ func (c *Controller) GetProxyWorkloadLabels(proxy *model.Proxy) (labels.Collecti
 			}
 		}
 	}
-
+	log.Infof("[dbg][Comb] GetProxyWorkloadLabels(%v) called, return %v, nil", *proxy, out)
 	return out, nil
 }
 
 // Run all controllers until a signal is received
 func (c *Controller) Run(stop <-chan struct{}) {
+	log.Infof("[dbg][Comb] Run called")
 	c.monitor.Start(stop)
 }
 
 // AppendServiceHandler implements a service catalog operation
 func (c *Controller) AppendServiceHandler(f func(*model.Service, model.Event)) error {
 	c.monitor.svcHandlers = append(c.monitor.svcHandlers, f)
+	log.Infof("[dbg][Comb] AppendServiceHandler called")
 	return nil
 }
 
 // AppendInstanceHandler implements a service catalog operation
 func (c *Controller) AppendInstanceHandler(f func(*model.ServiceInstance, model.Event)) error {
 	c.monitor.instHandlers = append(c.monitor.instHandlers, f)
+	log.Infof("[dbg][Comb] AppendInstanceHandler called")
 	return nil
 }
 
 // GetIstioServiceAccounts implements model.ServiceAccounts operation TODO
 func (c *Controller) GetIstioServiceAccounts(svc *model.Service, ports []int) []string {
+	log.Infof("[dbg][Comb] GetIstioServiceAccounts(%v,%v) called", *svc, ports)
 	return []string{
 		spiffe.MustGenSpiffeURI("default", "default"),
 	}

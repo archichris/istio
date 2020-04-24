@@ -29,7 +29,7 @@ func TestNewServer(t *testing.T) {
 		Config: ConfigArgs{DisableInstallCRDs: true},
 		DiscoveryOptions: DiscoveryServiceOptions{
 			MonitoringAddr: ":15014",
-			SecureGrpcAddr: ":15011",
+			// SecureGrpcAddr: ":15011",
 		},
 	}
 	os.Setenv("COMB_ADDR", "192.168.56.31:30543")
@@ -37,16 +37,17 @@ func TestNewServer(t *testing.T) {
 	os.Setenv("JWT_POPILOT_CERT_PROVIDERLICY", "istiod")
 	os.Setenv("POD_NAME", "testpod")
 	os.Setenv("POD_NAMESPACE", "default")
-	// os.Setenv("SERVICE_ACCOUNT", "istiod")
+	os.Setenv("SERVICE_ACCOUNT", "istiod")
 	os.Setenv("PILOT_TRACE_SAMPLING", "1")
 	os.Setenv("CONFIG_NAMESPACE", "istio-config")
 	os.Setenv("CONFIG_NAMESPACE", "default")
 	os.Setenv("PILOT_ENABLE_PROTOCOL_SNIFFING_FOR_OUTBOUND", "true")
 	os.Setenv("PILOT_ENABLE_PROTOCOL_SNIFFING_FOR_INBOUND", "false")
 	os.Setenv("INJECTION_WEBHOOK_CONFIG_NAME", "istio-sidecar-injector")
-	os.Setenv("ISTIOD_ADDR", "istiod.istio-system.svc:15012")
+	// os.Setenv("ISTIOD_ADDR", "istiod.istio-system.svc:15012")
 	os.Setenv("SERVICE_ACCOUNT", "istiod-service-account")
 	os.Setenv("ISTIOD_SERVICE_PORT_HTTPS_DNS", "15012")
+	os.Setenv("ENABLE_INJECTOR", "false")
 
 	dnsCertDir = strings.TrimPrefix(dnsCertDir, ".")
 	dnsCertFile = strings.TrimPrefix(dnsCertFile, ".")

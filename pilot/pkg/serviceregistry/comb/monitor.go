@@ -61,6 +61,7 @@ type combMonitor struct {
 	depSvcs          map[string]*client.DependencyMicroService
 	// combSvcTstps     map[string]string
 	// combInsTstps     map[string]string
+	opt          *client.Options
 	svcHandlers  []func(*model.Service, model.Event)
 	instHandlers []func(*model.ServiceInstance, model.Event)
 }
@@ -72,10 +73,10 @@ var (
 // NewCombMonitor watches for changes in Consul services and CatalogServices
 func NewCombMonitor(opt *client.Options) (*combMonitor, error) {
 	r := &client.RegistryClient{}
-	err := r.Initialize(*opt)
-	if err != nil {
-		return nil, err
-	}
+	// err := r.Initialize(*opt)
+	// if err != nil {
+	// 	return nil, err
+	// }
 	return &combMonitor{
 		client:   r,
 		services: make(map[string]*model.Service),
@@ -85,6 +86,7 @@ func NewCombMonitor(opt *client.Options) (*combMonitor, error) {
 		doUpdateWatch:    true,
 		combSvcs:         make(map[string][]string),
 		depSvcs:          make(map[string]*client.DependencyMicroService),
+		opt:              opt,
 		svcHandlers:      make([]func(*model.Service, model.Event), 0),
 		instHandlers:     make([]func(*model.ServiceInstance, model.Event), 0),
 	}, nil
@@ -138,7 +140,7 @@ func (m *combMonitor) updateWatch() error {
 		return err
 	}
 
-	log.Debugf("[Comb] watch dependencies: %v", m.depSvcs)
+	log.Infof("[dbg][Comb] watch dependencies: %v", m.depSvcs)
 
 	m.doUpdateWatch = false
 	return nil
@@ -148,8 +150,6 @@ func (m *combMonitor) serviceAddHandler(service *proto.MicroService) error {
 
 	m.cacheMutex.Lock()
 	defer m.cacheMutex.Unlock()
-
-	log.Debugf("[Comb] New comb service: %v-%v", service.ServiceName, service.ServiceId)
 
 	if _, ok := excludeSvcNames[service.ServiceName]; ok {
 		return nil
@@ -173,14 +173,15 @@ func (m *combMonitor) serviceAddHandler(service *proto.MicroService) error {
 		log.Errorf("[Comb] GetMicroServiceInstances failed, err: %v", err)
 		return err
 	} else if endpoints == nil {
-		log.Warnf("[Comb] %s have no instance", service.ServiceName)
+		// log.Warnf("[Comb] %s have no instance", service.ServiceName)
 		return nil
 	}
 
+	log.Infof("[dbg][Comb] New comb service: %v-%v", service.ServiceName, service.ServiceId)
 	svcs := convertService(service, endpoints)
 	m.combSvcs[service.ServiceId] = []string{}
 	for _, svc := range svcs {
-		log.Debugf("[Comb] Add new istio service: %v-%v-%v", svc.Hostname, svc.Address, svc.Ports)
+		log.Infof("[dbg][Comb] Add new istio service: %v-%v-%v", svc.Hostname, svc.Address, svc.Ports)
 		m.services[string(svc.Hostname)] = svc
 		m.combSvcs[service.ServiceId] = append(m.combSvcs[service.ServiceId], string(svc.Hostname))
 		// m.combSvcTstps[service.ServiceId] = service.ModTimestamp
@@ -193,7 +194,7 @@ func (m *combMonitor) serviceAddHandler(service *proto.MicroService) error {
 		}
 		m.serviceInstances[string(svc.Hostname)] = instances
 		for _, ins := range instances {
-			log.Debugf("[Comb] Add new istio instance: %v-%v-%v", ins.Endpoint.Address, ins.Endpoint.EndpointPort, ins.Endpoint.Labels)
+			log.Infof("[dbg][Comb] Add new istio instance: %v-%v-%v", ins.Endpoint.Address, ins.Endpoint.EndpointPort, ins.Endpoint.Labels)
 		}
 	}
 	return nil
@@ -202,12 +203,12 @@ func (m *combMonitor) serviceAddHandler(service *proto.MicroService) error {
 func (m *combMonitor) serviceDelHandler(id string) {
 	m.cacheMutex.Lock()
 	defer m.cacheMutex.Unlock()
-	log.Debugf("[Comb] delete comb service: %v", id)
+	log.Infof("[dbg][Comb] delete comb service: %v", id)
 	hostnames := m.combSvcs[id]
 	for _, hostname := range hostnames {
 		delete(m.serviceInstances, hostname)
 		delete(m.services, hostname)
-		log.Debugf("[Comb] delete istio service: %v", hostname)
+		log.Infof("[dbg][Comb] delete istio service: %v", hostname)
 	}
 	delete(m.combSvcs, id)
 	delete(m.depSvcs, id)
@@ -219,9 +220,14 @@ func (m *combMonitor) initialize() error {
 		return nil
 	}
 
-	err := m.regSelf()
-
+	err := m.client.Initialize(*m.opt)
 	if err != nil {
+		return err
+	}
+
+	err = m.regSelf()
+	if err != nil {
+		m.client.Close()
 		return err
 	}
 
@@ -232,12 +238,14 @@ func (m *combMonitor) initialize() error {
 	// get all services from servicecomb
 	services, err := m.client.GetAllMicroServices()
 	if err != nil {
+		m.client.Close()
 		return err
 	}
 
 	for _, service := range services {
 		err := m.serviceAddHandler(service)
 		if err != nil {
+			m.client.Close()
 			return err
 		}
 	}
@@ -245,10 +253,11 @@ func (m *combMonitor) initialize() error {
 	err = m.client.WatchMicroService(m.consumerId, m.watchIns)
 	if err != nil {
 		log.Errorf("[Comb] WatchMicroService failed, %v", err)
+		m.client.Close()
 		return err
 	}
 	m.initDone = true
-	log.Debugf("[Comb] monitor is initialized successfully")
+	log.Infof("[dbg][Comb] monitor is initialized successfully")
 	return nil
 }
 
@@ -306,7 +315,7 @@ func (m *combMonitor) loopProc() {
 }
 
 func (m *combMonitor) watchComb(change chan struct{}, stop <-chan struct{}) {
-	log.Debugf("[Comb] Start to watch ServiceCenter")
+	log.Infof("[dbg][Comb] Start to watch ServiceCenter")
 	for {
 		select {
 		case <-stop:
@@ -366,13 +375,13 @@ func (m *combMonitor) insAddUpdateAction(response *client.MicroServiceInstanceCh
 					updateInstances = append(updateInstances, newIns)
 					m.serviceInstances[hostname][i] = newIns
 					update = true
-					log.Debugf("[Comb] Update istio instance: %v-%v-%v", newIns.Endpoint.Address, newIns.Endpoint.EndpointPort, newIns.Endpoint.Labels)
+					log.Infof("[dbg][Comb] Update istio instance: %v-%v-%v", newIns.Endpoint.Address, newIns.Endpoint.EndpointPort, newIns.Endpoint.Labels)
 					break
 				}
 			}
 			if !update {
 				tmpAddInst = append(tmpAddInst, newIns)
-				log.Debugf("[Comb] Add istio instance: %v-%v-%v", newIns.Endpoint.Address, newIns.Endpoint.EndpointPort, newIns.Endpoint.Labels)
+				log.Infof("[dbg][Comb] Add istio instance: %v-%v-%v", newIns.Endpoint.Address, newIns.Endpoint.EndpointPort, newIns.Endpoint.Labels)
 			}
 		}
 		if len(tmpAddInst) != 0 {
@@ -412,7 +421,7 @@ func (m *combMonitor) insDeleteAction(response *client.MicroServiceInstanceChang
 				} else {
 					m.serviceInstances[hostname] = instances[:i]
 				}
-				log.Debugf("[Comb] Delete istio instance: %v-%v-%v", instance.Endpoint.Address, instance.Endpoint.EndpointPort, instance.Endpoint.Labels)
+				log.Infof("[dbg][Comb] Delete istio instance: %v-%v-%v", instance.Endpoint.Address, instance.Endpoint.EndpointPort, instance.Endpoint.Labels)
 				for _, f := range m.instHandlers {
 					f(instance, model.EventDelete)
 				}

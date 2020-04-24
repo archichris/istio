@@ -25,7 +25,7 @@ import (
 
 var (
 	gTestCenterAddr = "192.168.56.31:30543"
-	testOpt         = client.Options{
+	gTestOpt        = client.Options{
 		Addrs:        []string{gTestCenterAddr},
 		EnableSSL:    false,
 		ConfigTenant: "default",
@@ -35,19 +35,22 @@ var (
 )
 
 func TestNewCombMonitor(t *testing.T) {
-	m, err := NewCombMonitor(&testOpt)
+	_, err := NewCombMonitor(&gTestOpt)
 	if err != nil {
 		t.Errorf("NewCombMonitor failed, %v", err)
 		return
 	}
-	m.client.Close()
-
 }
 
 func TestRegSelf(t *testing.T) {
-	m, err := NewCombMonitor(&testOpt)
+	m, err := NewCombMonitor(&gTestOpt)
 	if err != nil {
 		t.Errorf("NewCombMonitor failed, %v", err)
+		return
+	}
+	err = m.client.Initialize(*m.opt)
+	if err != nil {
+		t.Errorf("Initialize client failed,%v", err)
 		return
 	}
 	defer m.client.Close()
@@ -61,13 +64,23 @@ func TestRegSelf(t *testing.T) {
 		t.Errorf("regSelf failed, recorded consumer id is %v", m.consumerId)
 		return
 	}
-	m.client.UnregisterMicroService(m.consumerId)
+	_, _ = m.client.UnregisterMicroService(m.consumerId)
 }
 
 func TestUpdateWatch(t *testing.T) {
-	m, _ := NewCombMonitor(&testOpt)
+	var err error
+	m, _ := NewCombMonitor(&gTestOpt)
+	err = m.client.Initialize(*m.opt)
+	if err != nil {
+		t.Errorf("Initialize client failed,%v", err)
+		return
+	}
 	defer m.client.Close()
-	_ = m.regSelf()
+	err = m.regSelf()
+	if err != nil {
+		t.Errorf("regSelf failed, %v", err)
+		return
+	}
 	defer m.client.UnregisterMicroService(m.consumerId)
 
 	provider := client.DependencyMicroService{
@@ -79,7 +92,7 @@ func TestUpdateWatch(t *testing.T) {
 	// watchKey := strings.Join([]string{testCvsSvc.AppId, testCvsSvc.ServiceName, testCvsSvc.Version}, "_")
 	m.depSvcs["serviceid"] = &provider
 	m.doUpdateWatch = false
-	err := m.updateWatch()
+	err = m.updateWatch()
 	if err != nil {
 		t.Errorf("updateWatch failed, unnecessary update, %v", err)
 	}
@@ -91,9 +104,15 @@ func TestUpdateWatch(t *testing.T) {
 }
 
 func TestServiceAddDelHandler(t *testing.T) {
-	m, _ := NewCombMonitor(&testOpt)
+	var err error
+	m, _ := NewCombMonitor(&gTestOpt)
+	err = m.client.Initialize(*m.opt)
+	if err != nil {
+		t.Errorf("Initialize client failed,%v", err)
+		return
+	}
 	defer m.client.Close()
-	err := m.regSelf()
+	err = m.regSelf()
 	if err != nil {
 		t.Errorf("register self failed, %v", err)
 		return
@@ -115,10 +134,11 @@ func TestServiceAddDelHandler(t *testing.T) {
 	instId, err := m.client.RegisterMicroServiceInstance(&inst)
 	if err != nil {
 		t.Errorf("RegisterMicroServiceInstance failed, %v", err)
+		_, _ = m.client.UnregisterMicroService(svcId)
 		return
 	}
 
-	defer m.client.UnregisterMicroServiceInstance(svcId, instId)
+	defer m.client.UnregisterMicroService(svcId)
 
 	fmt.Printf("*************** test serviceAddHandler ***************\n")
 
@@ -160,7 +180,8 @@ func TestServiceAddDelHandler(t *testing.T) {
 
 		for _, inst := range insts {
 			if inst.Endpoint.Labels["serviceid"] != svcId || inst.Endpoint.Labels["instanceid"] != instId {
-				t.Errorf("serviceAddHandler failed, expect:%v-%v,reality:%v-%v", svcId, instId, inst.Endpoint.Labels["serviceid"], inst.Endpoint.Labels["instanceid"])
+				t.Errorf("serviceAddHandler failed, expect:%v-%v,reality:%v-%v",
+					svcId, instId, inst.Endpoint.Labels["serviceid"], inst.Endpoint.Labels["instanceid"])
 				return
 			}
 		}
@@ -194,13 +215,12 @@ func TestServiceAddDelHandler(t *testing.T) {
 }
 
 func TestInitialize(t *testing.T) {
-	m, _ := NewCombMonitor(&testOpt)
-	defer m.client.Close()
+	m, _ := NewCombMonitor(&gTestOpt)
 	err := m.initialize()
 	if err != nil {
 		t.Errorf("initialize failed, %v", err)
 	}
-
+	defer m.client.Close()
 	defer m.client.UnregisterMicroService(m.consumerId)
 
 	if !m.initDone || len(m.consumerId) == 0 {
@@ -216,11 +236,19 @@ var (
 
 func testMonitorPre(t *testing.T) error {
 	var err error
-	gTestMonitor, err = NewCombMonitor(&testOpt)
+	gTestMonitor, err = NewCombMonitor(&gTestOpt)
 	if err != nil {
 		t.Errorf("NewCombMonitor failed, %v", err)
 		return err
 	}
+
+	err = gTestMonitor.client.Initialize(*gTestMonitor.opt)
+	if err != nil {
+		t.Errorf("Initialize client failed,%v", err)
+		return err
+	}
+
+	defer gTestMonitor.client.Close()
 
 	gTestInsIds = []string{}
 
@@ -228,8 +256,6 @@ func testMonitorPre(t *testing.T) error {
 	gTestSvcId, err = gTestMonitor.client.RegisterService(&testCvsSvc)
 	if err != nil {
 		t.Errorf("RegisterService failed, %v", err)
-		_, _ = gTestMonitor.client.UnregisterMicroService(gTestMonitor.consumerId)
-		gTestMonitor.client.Close()
 		return err
 	}
 
@@ -241,7 +267,6 @@ func testMonitorPre(t *testing.T) error {
 		if err != nil {
 			t.Errorf("RegisterMicroServiceInstance failed, %v, %+v", err, ins)
 			_, _ = gTestMonitor.client.UnregisterMicroService(gTestSvcId)
-			_, _ = gTestMonitor.client.UnregisterMicroService(gTestMonitor.consumerId)
 			gTestMonitor.client.Close()
 			return err
 		}
@@ -257,6 +282,7 @@ func testMonitorEnd(t *testing.T) {
 }
 
 func TestMonitorStart(t *testing.T) {
+	fmt.Printf("*************** TestMonitorStart ***************\n")
 	if nil != testMonitorPre(t) {
 		return
 	}
@@ -293,6 +319,8 @@ func TestMonitorStart(t *testing.T) {
 }
 
 func TestMonitorAddDelService(t *testing.T) {
+	fmt.Printf("*************** TestMonitorAddDelService ***************\n")
+	time.Sleep(2 * periodicCheckTime)
 	if nil != testMonitorPre(t) {
 		return
 	}
@@ -321,7 +349,7 @@ func TestMonitorAddDelService(t *testing.T) {
 	_, err = gTestMonitor.client.RegisterMicroServiceInstance(&inst)
 	if err != nil {
 		t.Errorf("RegisterMicroServiceInstance failed, %v", err)
-		gTestMonitor.client.UnregisterMicroService(serviceId)
+		_, _ = gTestMonitor.client.UnregisterMicroService(serviceId)
 		return
 	}
 
@@ -332,14 +360,14 @@ func TestMonitorAddDelService(t *testing.T) {
 
 	if _, ok := gTestMonitor.combSvcs[serviceId]; !ok {
 		t.Errorf("add service failed, combSvcs=%v", gTestMonitor.combSvcs)
-		defer gTestMonitor.client.UnregisterMicroService(serviceId)
+		_, _ = gTestMonitor.client.UnregisterMicroService(serviceId)
 		return
 	}
 
 	if newSvcNum <= oldSvcNum || newInstNum <= oldInstNum {
 		t.Errorf("add service failed, oldSvcNum=%d, newSvcNum=%d, oldInstNum=%v, newInstNum==%v",
 			newSvcNum, oldSvcNum, newInstNum, oldInstNum)
-		defer gTestMonitor.client.UnregisterMicroService(serviceId)
+		_, _ = gTestMonitor.client.UnregisterMicroService(serviceId)
 		return
 	}
 
@@ -365,6 +393,8 @@ func TestMonitorAddDelService(t *testing.T) {
 }
 
 func TestMonitorAddUpdateDeleteInst(t *testing.T) {
+	fmt.Printf("*************** TestMonitorAddUpdateDeleteInst ***************\n")
+	time.Sleep(2 * periodicCheckTime)
 	if nil != testMonitorPre(t) {
 		return
 	}
