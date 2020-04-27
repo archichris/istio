@@ -96,6 +96,7 @@ func (e *endpointsController) GetProxyServiceInstances(c *Controller, proxy *mod
 		out = append(out, instances...)
 	}
 
+	log.Infof("[dbg][multi] GetProxyServiceInstances %+v return %+v", proxy, out)
 	return out
 }
 
@@ -200,7 +201,7 @@ func (e *endpointsController) InstancesByPort(c *Controller, svc *model.Service,
 			}
 		}
 	}
-
+	log.Infof("[dbg][multi] InstancesByPort %+v:%+v return %+v", reqSvcPort, labelsList, out)
 	return out, nil
 }
 

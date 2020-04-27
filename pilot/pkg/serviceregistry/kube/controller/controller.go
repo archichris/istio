@@ -45,7 +45,6 @@ import (
 	configKube "istio.io/istio/pkg/config/kube"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/mesh"
-	"istio.io/istio/pkg/config/protocol"
 	"istio.io/istio/pkg/queue"
 )
 
@@ -556,18 +555,22 @@ func (c *Controller) InstancesByPort(svc *model.Service, reqSvcPort int,
 
 // GetProxyServiceInstances returns service instances co-located with a given proxy
 func (c *Controller) GetProxyServiceInstances(proxy *model.Proxy) ([]*model.ServiceInstance, error) {
+	log.Infof("[dbg][multi] GetProxyServiceInstances(%+v) called", *proxy)
 	out := make([]*model.ServiceInstance, 0)
 	if len(proxy.IPAddresses) > 0 {
 		// only need to fetch the corresponding pod through the first IP, although there are multiple IP scenarios,
 		// because multiple ips belong to the same pod
 		proxyIP := proxy.IPAddresses[0]
 		pod := c.pods.getPodByIP(proxyIP)
+		log.Infof("[dbg][multi] proxyIp(%+v) match pod %+v", proxyIP, pod)
 		if pod != nil {
 			// for split horizon EDS k8s multi cluster, in case there are pods of the same ip across clusters,
 			// which can happen when multi clusters using same pod cidr.
 			// As we have proxy Network meta, compare it with the network which endpoint belongs to,
 			// if they are not same, ignore the pod, because the pod is in another cluster.
 			if proxy.Metadata.Network != c.endpointNetwork(proxyIP) {
+				log.Infof("[dbg][multi] proxy.Metadata.Network(%+v)!= c.endpointNetwork(proxyIP)(%+v)",
+					proxy.Metadata.Network, c.endpointNetwork(proxyIP))
 				return out, nil
 			}
 			// 1. find proxy service by label selector, if not any, there may exist headless service without selector
@@ -577,6 +580,7 @@ func (c *Controller) GetProxyServiceInstances(proxy *model.Proxy) ([]*model.Serv
 				for _, svc := range services {
 					out = append(out, c.getProxyServiceInstancesByPod(pod, svc, proxy)...)
 				}
+				log.Infof("[dbg][multi] pod %+v match svc %+v", pod, out)
 				return out, nil
 			}
 			// 2. Headless service without selector
@@ -601,6 +605,7 @@ func (c *Controller) GetProxyServiceInstances(proxy *model.Proxy) ([]*model.Serv
 			log.Infof("Missing metrics env, empty list of services for pod %s", proxy.ID)
 		}
 	}
+	log.Infof("[dbg][multi] GetProxyServiceInstances %+v return %+v", *proxy, out)
 	return out, nil
 }
 
@@ -672,6 +677,7 @@ func (c *Controller) getProxyServiceInstancesFromMetadata(proxy *model.Proxy) ([
 			})
 		}
 	}
+	log.Infof("[dbg][multi] getProxyServiceInstancesFromMetadata %+v return %+v", *proxy, out)
 	return out, nil
 }
 
@@ -713,7 +719,7 @@ func (c *Controller) getProxyServiceInstancesByPod(pod *v1.Pod, service *v1.Serv
 	// }
 	ifName := c.ifNames[hostname]
 	// p := c.proto[hostname]
-	mac := "00:00:00:00:00:00"
+	// mac := "00:00:00:00:00:00"
 	ip := proxy.IPAddresses[0]
 	if status, ok := pod.Annotations["k8s.v1.cni.cncf.io/mynetworks-status"]; ok {
 		statuss := "{\"status\":" + status + " }"
@@ -726,7 +732,7 @@ func (c *Controller) getProxyServiceInstancesByPod(pod *v1.Pod, service *v1.Serv
 			for _, s := range netStatuss.Status {
 				if ifName == s.Interface {
 					ip = s.IPs[0]
-					mac = s.MAC
+					// mac = s.MAC
 				}
 			}
 		}
@@ -746,9 +752,9 @@ func (c *Controller) getProxyServiceInstancesByPod(pod *v1.Pod, service *v1.Serv
 		}
 
 		// multi-network
-		if svcPort.Protocol == protocol.MAC {
-			ip = mac
-		}
+		// if svcPort.Protocol == protocol.MAC {
+		// 	ip = mac
+		// }
 		// consider multiple IP scenarios
 		// for _, ip := range proxy.IPAddresses {
 		out = append(out, c.getEndpoints(podIP, ip, int32(portNum), svcPort, svc))
@@ -890,7 +896,7 @@ func (c *Controller) updateEDS(ep *v1.Endpoints, event model.Event) {
 
 				//multi-network
 				podIP := ea.IP
-				mac := "00:00:00:00:00:00"
+				// mac := "00:00:00:00:00:00"
 				// if pod == nil {
 				// 	log.Errorf("[multi] pod is nil")
 				// } else {
@@ -911,7 +917,7 @@ func (c *Controller) updateEDS(ep *v1.Endpoints, event model.Event) {
 							for _, s := range netStatuss.Status {
 								// log.Info("[multi] ifName:" + ifName + " If:" + s.Interface)
 								if ifName == s.Interface {
-									mac = s.MAC
+									// mac = s.MAC
 									podIP = s.IPs[0]
 									// log.Info("[multi] " + ea.IP + " > " + podIP + ":" + mac)
 								}
@@ -923,9 +929,9 @@ func (c *Controller) updateEDS(ep *v1.Endpoints, event model.Event) {
 				// EDS and ServiceEntry use name for service port - ADS will need to
 				// map to numbers.
 				//multi-network
-				if c.servicesMap[hostname].Ports != nil && c.servicesMap[hostname].Ports[0].Protocol == protocol.MAC {
-					podIP = mac
-				}
+				// if c.servicesMap[hostname].Ports != nil && c.servicesMap[hostname].Ports[0].Protocol == protocol.MAC {
+				// 	podIP = mac
+				// }
 
 				log.Infof("[multi] updateEDS svc:%s, ip:%s, podip:%s, proto:%s", hostname, ea.IP, podIP, c.servicesMap[hostname].Ports[0].Protocol)
 

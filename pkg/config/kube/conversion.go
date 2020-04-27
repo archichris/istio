@@ -66,11 +66,11 @@ func ConvertProtocol(port int32, name string, proto coreV1.Protocol) protocol.In
 	}
 
 	// multi-network
-	if strings.ToLower(name) == "sdr" {
-		return protocol.SDR
-	} else if strings.ToLower(name) == "mac" {
-		return protocol.MAC
-	}
+	// if strings.ToLower(name) == "sdr" {
+	// 	return protocol.SDR
+	// } else if strings.ToLower(name) == "mac" {
+	// 	return protocol.MAC
+	// }
 
 	// Parse the port name to find the prefix, if any.
 	i := strings.IndexByte(name, '-')

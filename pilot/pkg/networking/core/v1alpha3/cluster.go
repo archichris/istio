@@ -105,6 +105,10 @@ func getDefaultCircuitBreakerThresholds() *v2Cluster.CircuitBreakers_Thresholds 
 func (configgen *ConfigGeneratorImpl) BuildClusters(proxy *model.Proxy, push *model.PushContext) []*apiv2.Cluster {
 	clusters := make([]*apiv2.Cluster, 0)
 	instances := proxy.ServiceInstances
+	log.Infof("[dbg][multi] BuildClusters %+v, %+v", proxy, instances)
+	if len(instances) > 0 {
+		log.Infof("[dbg][multi] instances[0] %+v", instances[0])
+	}
 
 	outboundClusters := configgen.buildOutboundClusters(proxy, push)
 
@@ -549,8 +553,8 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(proxy *model.Proxy,
 					Port:            instance.ServicePort,
 					Push:            push,
 					// multi-network
-					Bind: actualLocalHost,
-					// Bind: instance.Endpoint.Address,
+					// Bind: actualLocalHost,
+					Bind: instance.Endpoint.Address,
 				}
 				localCluster := configgen.buildInboundClusterForPortOrUDS(pluginParams)
 				clusters = append(clusters, localCluster)

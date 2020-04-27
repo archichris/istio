@@ -537,6 +537,9 @@ func (node *Proxy) SetGatewaysForProxy(ps *PushContext) {
 
 func (node *Proxy) SetServiceInstances(serviceDiscovery ServiceDiscovery) error {
 	instances, err := serviceDiscovery.GetProxyServiceInstances(node)
+
+	log.Infof("[dbg][multi] Proxy:%v, SetServiceInstances get %v, %v", node.ID, instances, err)
+
 	if err != nil {
 		log.Errorf("failed to get service proxy service instances: %v", err)
 		return err

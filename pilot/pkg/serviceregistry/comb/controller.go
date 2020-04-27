@@ -15,7 +15,6 @@
 package comb
 
 import (
-	"fmt"
 	"os"
 	"time"
 
@@ -142,7 +141,8 @@ func (c *Controller) InstancesByPort(svc *model.Service, port int,
 		log.Infof("[dbg][Comb] InstancesByPort(%v,%v,%v) called, return %v, nil", *svc, port, labels, instances)
 		return instances, nil
 	}
-	return nil, fmt.Errorf("could not find instance of service: %s", string(svc.Hostname))
+	log.Infof("[Comb] could not find instance of service: %s", string(svc.Hostname))
+	return nil, nil
 }
 
 // returns true if an instance's port matches with any in the provided list
