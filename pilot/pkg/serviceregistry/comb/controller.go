@@ -15,11 +15,15 @@
 package comb
 
 import (
+	"crypto/tls"
 	"os"
+	"strings"
 	"time"
 
 	// "github.com/go-chassis/go-chassis/core/config"
 	// "github.com/go-chassis/go-chassis/core/registry/servicecenter"
+	"net/url"
+
 	client "github.com/go-chassis/go-chassis/pkg/scclient"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry"
@@ -33,10 +37,11 @@ var _ serviceregistry.Instance = &Controller{}
 var (
 	defaultRegisterAddr = "127.0.0.1:30100"
 	opt                 = client.Options{
-		EnableSSL:    false,
+		EnableSSL:    true,
 		ConfigTenant: "default",
 		Timeout:      time.Duration(15),
 		Version:      "v3",
+		TLSConfig:    &tls.Config{InsecureSkipVerify: true},
 	}
 )
 
@@ -58,7 +63,19 @@ func NewController(addr string, clusterID string) (*Controller, error) {
 			address = defaultRegisterAddr
 		}
 	}
-	opt.Addrs = []string{address}
+
+	s, err := url.Parse(address)
+
+	if err != nil {
+		log.Errorf("[Comb] Parse(%s) failed, %v", address, err)
+		return nil, err
+	}
+
+	if strings.ToLower(s.Scheme) == "http" {
+		opt.EnableSSL = false
+	}
+
+	opt.Addrs = []string{s.Host}
 
 	log.Infof("[Comb] ServiceCenter address: %v", opt.Addrs)
 

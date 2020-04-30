@@ -15,6 +15,8 @@
 package comb
 
 import (
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -25,6 +27,8 @@ import (
 
 	// "github.com/go-mesh/openlogging"
 	// "github.com/hashicorp/consul/api"
+	"regexp"
+
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/pkg/log"
 )
@@ -64,6 +68,7 @@ type combMonitor struct {
 	opt          *client.Options
 	svcHandlers  []func(*model.Service, model.Event)
 	instHandlers []func(*model.ServiceInstance, model.Event)
+	verReg       *regexp.Regexp
 }
 
 var (
@@ -77,6 +82,15 @@ func NewCombMonitor(opt *client.Options) (*combMonitor, error) {
 	// if err != nil {
 	// 	return nil, err
 	// }
+	appID := os.Getenv("COMB_MONITOR_APP_ID")
+	if len(appID) != 0 {
+		monitorSvc.AppId = appID
+		depConsumer.AppID = appID
+	}
+
+	// X.Y.Z
+	verReg, _ := regexp.Compile(`^\d+(\.\d+){0,2}\+?$|^\d+(\.\d+){0,2}-\d+(\.\d+){0,2}$|^latest$`)
+
 	return &combMonitor{
 		client:   r,
 		services: make(map[string]*model.Service),
@@ -89,6 +103,7 @@ func NewCombMonitor(opt *client.Options) (*combMonitor, error) {
 		opt:              opt,
 		svcHandlers:      make([]func(*model.Service, model.Event), 0),
 		instHandlers:     make([]func(*model.ServiceInstance, model.Event), 0),
+		verReg:           verReg,
 	}, nil
 }
 
@@ -136,7 +151,7 @@ func (m *combMonitor) updateWatch() error {
 
 	err := m.client.AddDependencies(&request)
 	if err != nil {
-		log.Errorf("[Comb] AddDependencies %+v failed, %v", request, err)
+		log.Errorf("[Comb] AddDependencies %+v failed, %v", *request.Dependencies[0], err)
 		return err
 	}
 
@@ -155,22 +170,27 @@ func (m *combMonitor) serviceAddHandler(service *proto.MicroService) error {
 		return nil
 	}
 
-	provider := client.DependencyMicroService{
-		AppID:       service.AppId,
-		ServiceName: service.ServiceName,
-		Version:     service.Version,
-	}
+	if !m.verReg.MatchString(service.Version) {
+		log.Errorf("[Comb] Bad Version %s, service: %s", service.Version, service.ServiceName)
+	} else {
+		log.Errorf("[dbg][Comb] Version %s, service: %s", service.Version, service.ServiceName)
+		provider := client.DependencyMicroService{
+			AppID:       service.AppId,
+			ServiceName: service.ServiceName,
+			Version:     service.Version,
+		}
 
-	// watchKey := strings.Join([]string{service.AppId, service.ServiceName, service.Version}, "_")
+		// watchKey := strings.Join([]string{service.AppId, service.ServiceName, service.Version}, "_")
 
-	if _, ok := m.depSvcs[service.ServiceId]; !ok {
-		m.depSvcs[service.ServiceId] = &provider
-		m.doUpdateWatch = true
+		if _, ok := m.depSvcs[service.ServiceId]; !ok {
+			m.depSvcs[service.ServiceId] = &provider
+			m.doUpdateWatch = true
+		}
 	}
 
 	endpoints, err := m.client.GetMicroServiceInstances(m.consumerId, service.ServiceId)
 	if err != nil {
-		log.Errorf("[Comb] GetMicroServiceInstances failed, err: %v", err)
+		log.Warnf("[Comb] GetMicroServiceInstances failed, err: %v", err)
 		return err
 	} else if endpoints == nil {
 		// log.Warnf("[Comb] %s have no instance", service.ServiceName)
@@ -242,12 +262,22 @@ func (m *combMonitor) initialize() error {
 		return err
 	}
 
+	available_num := 0
 	for _, service := range services {
 		err := m.serviceAddHandler(service)
 		if err != nil {
-			m.client.Close()
-			return err
+			// m.client.Close()
+			// return err
+			continue
+		} else {
+			available_num++
 		}
+	}
+
+	if available_num == 0 {
+		log.Errorf("[Comb] No available instance exsit")
+		m.client.Close()
+		return fmt.Errorf("No available instance exsit")
 	}
 
 	err = m.client.WatchMicroService(m.consumerId, m.watchIns)
@@ -301,7 +331,7 @@ func (m *combMonitor) loopProc() {
 			for _, svc := range addSvcs {
 				err = m.serviceAddHandler(svc)
 				if err != nil {
-					log.Errorf("[Comb] serviceAddHandler failed, %v", err)
+					// log.Errorf("[Comb] serviceAddHandler failed, %v", err)
 					continue
 				}
 			}

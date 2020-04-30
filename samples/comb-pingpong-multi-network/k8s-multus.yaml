@@ -1,0 +1,86 @@
+# Copyright 2018 Istio Authors
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+################################################################################
+# tcp-echo service
+################################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pp1
+  namespace: is
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pp1
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: pp1
+        version: v1
+      annotations:
+        k8s.v1.cni.cncf.io/mynetworks: vxlan1
+    spec:
+      containers:
+      - name: pp1
+        image: 192.168.56.10:5000/comb-pingpong-multi-network:1.0.0
+        imagePullPolicy: IfNotPresent
+        args: [ "eth0:9000","eth1:9001"]
+        ports:
+        - containerPort: 9000
+        - containerPort: 9001
+        env:
+        - name: COMB_ADDR
+          value: 192.168.56.31:30543
+        - name: NAME_PREFIX
+          value: a
+        - name: TARGET_PREFIX
+          value: b          
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pp2
+  namespace: is
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pp2
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: pp2
+        version: v1
+      annotations:
+        k8s.v1.cni.cncf.io/mynetworks: vxlan1
+    spec:
+      containers:
+      - name: pp2
+        image: 192.168.56.10:5000/tcp-pingpong-multi-network:1.0.0
+        imagePullPolicy: IfNotPresent
+        args: [ "eth1:9002","eth0:9003"]
+        ports:
+        - containerPort: 9002
+        - containerPort: 9003
+        env:
+        - name: COMB_ADDR
+          value: 192.168.56.31:30543
+        - name: NAME_PREFIX
+          value: b
+        - name: TARGET_PREFIX
+          value: a   

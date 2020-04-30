@@ -17,6 +17,7 @@ package v1alpha3
 import (
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 
@@ -544,6 +545,11 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(proxy *model.Proxy,
 
 		have := make(map[*model.Port]bool)
 		for _, instance := range instances {
+			// multi-network
+			bind_addr := instance.Endpoint.Address
+			if strings.ToLower(os.Getenv("BIND_LOCALHOST")) == "true" {
+				bind_addr = actualLocalHost
+			}
 			// Filter out service instances with the same port as we are going to mark them as duplicates any way
 			// in normalizeClusters method.
 			if !have[instance.ServicePort] {
@@ -554,7 +560,7 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(proxy *model.Proxy,
 					Push:            push,
 					// multi-network
 					// Bind: actualLocalHost,
-					Bind: instance.Endpoint.Address,
+					Bind: bind_addr,
 				}
 				localCluster := configgen.buildInboundClusterForPortOrUDS(pluginParams)
 				clusters = append(clusters, localCluster)

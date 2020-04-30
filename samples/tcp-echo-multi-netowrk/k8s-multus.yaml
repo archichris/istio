@@ -19,6 +19,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: tcp-echo
+  namespace: is
 spec:
   replicas: 1
   selector:
@@ -30,12 +31,14 @@ spec:
       labels:
         app: tcp-echo
         version: v1
+      annotations:
+        k8s.v1.cni.cncf.io/mynetworks: vxlan1
     spec:
       containers:
       - name: tcp-echo
         image: 192.168.56.10:5000/k8s-multus-tcp-echo-server:1.0.0
         imagePullPolicy: IfNotPresent
-        args: [ "9000,9001, "hello" ]
+        args: [ "9000,9001", "hello" ]
         ports:
         - containerPort: 9000
         - containerPort: 9001
@@ -49,9 +52,9 @@ metadata:
   namespace: is
 spec:
   ports:
-  - name: tcp
+  - name: TCP
     port: 9000
-    protocal: tcp
+    protocal: TCP
   selector:
     app: tcp-echo
 ---
@@ -66,8 +69,8 @@ metadata:
     k8s.v1.cni.cncf.io/interface: eth1
 spec:
   ports:
-  - name: tcp
+  - name: TCP
     port: 9001
-    protocal: tcp
+    protocal: TCP
   selector:
     app: tcp-echo
