@@ -204,15 +204,3 @@ func convertProtocol(name string) protocol.Instance {
 	}
 	return p
 }
-
-// func convertEvent(event string) model.Event {
-// 	switch event {
-// 	case client.EventCreate:
-// 		return model.EventAdd
-// 	case client.EventUpdate:
-// 		return model.EventUpdate
-// 	case client.EventDelete:
-// 		return model.EventDelete
-// 	}
-// 	return model.EventUpdate
-// }

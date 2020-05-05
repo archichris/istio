@@ -38,17 +38,13 @@ spec:
       - name: pp1
         image: 192.168.56.10:5000/comb-pingpong-multi-network:1.0.0
         imagePullPolicy: IfNotPresent
-        args: [ "eth0:9000","eth1:9001"]
+        args: [ "a", "eth0:9000","eth1:9001","b"]
         ports:
         - containerPort: 9000
         - containerPort: 9001
         env:
         - name: COMB_ADDR
-          value: 192.168.56.31:30543
-        - name: NAME_PREFIX
-          value: a
-        - name: TARGET_PREFIX
-          value: b          
+          value: http://192.168.56.31:30543
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -73,14 +69,10 @@ spec:
       - name: pp2
         image: 192.168.56.10:5000/tcp-pingpong-multi-network:1.0.0
         imagePullPolicy: IfNotPresent
-        args: [ "eth1:9002","eth0:9003"]
+        args: [ "b","eth1:9002","eth0:9003","a"]
         ports:
         - containerPort: 9002
         - containerPort: 9003
         env:
         - name: COMB_ADDR
-          value: 192.168.56.31:30543
-        - name: NAME_PREFIX
-          value: b
-        - name: TARGET_PREFIX
-          value: a   
+          value: http://192.168.56.31:30543

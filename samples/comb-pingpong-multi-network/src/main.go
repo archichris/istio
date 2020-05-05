@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"strconv"
@@ -60,7 +61,7 @@ func register(r *client.RegistryClient, svcName, baseAddr, fabricAddr string) (s
 	svcTmp.ServiceId = ""
 	svcId, err := r.RegisterService(&svcTmp)
 	if err != nil {
-		fmt.Printf("Register service %s failed, %v\n", svcName, err)
+		log.Printf("[Error] Register service %s failed, %v\n", svcName, err)
 		return "", ""
 	}
 
@@ -73,7 +74,7 @@ func register(r *client.RegistryClient, svcName, baseAddr, fabricAddr string) (s
 
 	insId, err := r.RegisterMicroServiceInstance(&instTmp)
 	if err != nil {
-		fmt.Printf("Register instance %v failed, %v\n", instTmp, err)
+		log.Printf("[Error] Register instance %v failed, %v\n", instTmp, err)
 		return "", ""
 	}
 	return svcId, insId
@@ -81,34 +82,35 @@ func register(r *client.RegistryClient, svcName, baseAddr, fabricAddr string) (s
 
 // NewCombMonitor watches for changes in Consul services and CatalogServices
 func main() {
-	namePrefix := os.Getenv("NAME_PREFIX")
+	log.Printf("[Info] Start working, %v", os.Args)
+	namePrefix := os.Args[1]
 	r := &client.RegistryClient{}
 	address := os.Getenv("COMB_ADDR")
 	opt.Addrs = []string{address}
 	err := r.Initialize(opt)
 	if err != nil {
-		fmt.Printf("client failed, %v\n", err)
+		log.Printf("[Error] Client failed, %v\n", err)
 		os.Exit(-1)
 	}
 
-	info := strings.Split(os.Args[1], ":")
+	info := strings.Split(os.Args[2], ":")
 	eth := info[0]
 	port := info[1]
 
 	inf, err := net.InterfaceByName(eth)
 	if err != nil {
-		fmt.Printf("InterfaceByName(%v) failed, %v\n", eth, err)
+		log.Printf("[Error] InterfaceByName(%v) failed, %v\n", eth, err)
 		return
 	}
 	ips, err := inf.Addrs()
 	if err != nil {
-		fmt.Printf("Addrs(%v) failed, %v\n", eth, err)
+		log.Printf("[Error]Addrs(%v) failed, %v\n", eth, err)
 		return
 	}
 
 	ipnet, ok := ips[0].(*net.IPNet)
 	if !ok {
-		fmt.Printf("Addrs(%v) not right\n", ips)
+		log.Printf("[Error] Addrs(%v) not right\n", ips)
 		return
 	}
 
@@ -117,24 +119,24 @@ func main() {
 	basePort = basePort + 100
 	cliBaseAddr := &net.TCPAddr{IP: ipnet.IP, Port: basePort}
 
-	info = strings.Split(os.Args[2], ":")
+	info = strings.Split(os.Args[3], ":")
 	eth = info[0]
 	port = info[1]
 
 	inf, err = net.InterfaceByName(eth)
 	if err != nil {
-		fmt.Printf("InterfaceByName(%v) failed, %v\n", eth, err)
+		log.Printf("[Error] InterfaceByName(%v) failed, %v\n", eth, err)
 		return
 	}
 	ips, err = inf.Addrs()
 	if err != nil {
-		fmt.Printf("Addrs(%v) failed, %v\n", eth, err)
+		log.Printf("[Error] Addrs(%v) failed, %v\n", eth, err)
 		return
 	}
 
 	ipnet, ok = ips[0].(*net.IPNet)
 	if !ok {
-		fmt.Printf("Addrs(%v) not right\n", ips)
+		log.Printf("[Error] Addrs(%v) not right\n", ips)
 		return
 	}
 
@@ -152,12 +154,12 @@ func main() {
 	go serve(baseAddr)
 	go serve(fabricAddr)
 
-	peerSvc := os.Getenv("TARGET_PREFIX") + "_Server"
+	peerSvc := os.Args[4] + "_Server"
 	var instances []*proto.MicroServiceInstance
 	for {
 		instances, err = r.FindMicroServiceInstances(svcID, "default", peerSvc, "latest")
 		if err != nil {
-			fmt.Printf("FindMicroServiceInstances(%s, default, %s, latest) failed %v", svcID, peerSvc, err)
+			log.Printf("[Error] FindMicroServiceInstances(%s, default, %s, latest) failed %v", svcID, peerSvc, err)
 			time.Sleep(time.Second)
 		} else {
 			break
@@ -180,16 +182,16 @@ func main() {
 func serve(addr string) {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		fmt.Println("failed to create listener, err:", err)
+		log.Println("[Error] Failed to create listener, err:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("listening on %s\n", listener.Addr())
+	log.Printf("[Info] Listening on %s\n", listener.Addr())
 
 	// listen for new connections
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Println("failed to accept connection, err:", err)
+			log.Println("[Error] Failed to accept connection, err:", err)
 			continue
 		}
 
@@ -207,7 +209,7 @@ func handleConnection(conn net.Conn) {
 		bytes, err := reader.ReadBytes(byte('\n'))
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("failed to read data, err:", err)
+				log.Println("[Error] Failed to read data, err:", err)
 			}
 			return
 		}
@@ -217,7 +219,9 @@ func handleConnection(conn net.Conn) {
 		line := fmt.Sprintf("Pong: %s -> %s\n", conn.LocalAddr(), conn.RemoteAddr())
 		_, err = conn.Write([]byte(line))
 		if err != nil {
-			fmt.Printf("conn.Write failed, %v", err)
+			log.Printf("[Error] Conn.Write failed, %v", err)
+		} else {
+			log.Printf("[Info] Server Reply: %s", line)
 		}
 	}
 }
@@ -228,22 +232,22 @@ func cliProc(localAddr *net.TCPAddr, tagetAddr string) {
 	for {
 		conn, err := d.Dial("tcp", tagetAddr)
 		if err != nil {
-			fmt.Printf("Dial(%v) failed, %v\n", tagetAddr, err)
+			log.Printf("[Error] Dial(%v) failed, %v\n", tagetAddr, err)
 			time.Sleep(time.Second * 1)
 			continue
 		}
 		defer conn.Close()
 		for {
 			if _, err := conn.Write([]byte(request + "\n")); err != nil {
-				fmt.Printf("couldn't send request: %v\n", err)
+				log.Printf("[Error] Couldn't send request: %v\n", err)
 				return
 			} else {
 				reader := bufio.NewReader(conn)
 				if response, err := reader.ReadBytes(byte('\n')); err != nil {
-					fmt.Printf("couldn't read server response: %v\n", err)
+					log.Printf("[Error] Couldn't read server response: %v\n", err)
 					return
 				} else {
-					fmt.Print(string(response))
+					log.Print(string(response))
 				}
 
 			}

@@ -53,22 +53,19 @@ var (
 )
 
 type combMonitor struct {
-	client     *client.RegistryClient
-	consumerId string
-	services   map[string]*model.Service //key hostname value service
-	// servicesList     []*model.Service
+	client           *client.RegistryClient
+	consumerId       string
+	services         map[string]*model.Service           //key hostname value service
 	serviceInstances map[string][]*model.ServiceInstance //key hostname value serviceInstance array
 	cacheMutex       sync.Mutex
 	initDone         bool
 	doUpdateWatch    bool
 	combSvcs         map[string][]string //comb service ID to service hostnames
 	depSvcs          map[string]*client.DependencyMicroService
-	// combSvcTstps     map[string]string
-	// combInsTstps     map[string]string
-	opt          *client.Options
-	svcHandlers  []func(*model.Service, model.Event)
-	instHandlers []func(*model.ServiceInstance, model.Event)
-	verReg       *regexp.Regexp
+	opt              *client.Options
+	svcHandlers      []func(*model.Service, model.Event)
+	instHandlers     []func(*model.ServiceInstance, model.Event)
+	verReg           *regexp.Regexp
 }
 
 var (
@@ -78,10 +75,6 @@ var (
 // NewCombMonitor watches for changes in Consul services and CatalogServices
 func NewCombMonitor(opt *client.Options) (*combMonitor, error) {
 	r := &client.RegistryClient{}
-	// err := r.Initialize(*opt)
-	// if err != nil {
-	// 	return nil, err
-	// }
 	appID := os.Getenv("COMB_MONITOR_APP_ID")
 	if len(appID) != 0 {
 		monitorSvc.AppId = appID
@@ -92,9 +85,8 @@ func NewCombMonitor(opt *client.Options) (*combMonitor, error) {
 	verReg, _ := regexp.Compile(`^\d+(\.\d+){0,2}\+?$|^\d+(\.\d+){0,2}-\d+(\.\d+){0,2}$|^latest$`)
 
 	return &combMonitor{
-		client:   r,
-		services: make(map[string]*model.Service),
-		// servicesList:     []*model.Service{},
+		client:           r,
+		services:         make(map[string]*model.Service),
 		serviceInstances: make(map[string][]*model.ServiceInstance),
 		initDone:         false,
 		doUpdateWatch:    true,
@@ -173,7 +165,7 @@ func (m *combMonitor) serviceAddHandler(service *proto.MicroService) error {
 	if !m.verReg.MatchString(service.Version) {
 		log.Errorf("[Comb] Bad Version %s, service: %s", service.Version, service.ServiceName)
 	} else {
-		log.Errorf("[dbg][Comb] Version %s, service: %s", service.Version, service.ServiceName)
+		// log.Errorf("[dbg][Comb] Version %s, service: %s", service.Version, service.ServiceName)
 		provider := client.DependencyMicroService{
 			AppID:       service.AppId,
 			ServiceName: service.ServiceName,

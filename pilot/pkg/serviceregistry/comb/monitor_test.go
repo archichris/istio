@@ -40,8 +40,8 @@ func TestNewCombMonitor(t *testing.T) {
 		t.Errorf("NewCombMonitor failed, %v", err)
 		return
 	}
-	if !monitor.verReg.MatchString("32.4.2") {
-		t.Errorf("regexp match failed, 32.4.2")
+	if !monitor.verReg.MatchString("1.0.0") {
+		t.Errorf("regexp match failed, 1.0.0")
 	}
 	if monitor.verReg.MatchString("2019.1107.1115.51") {
 		t.Errorf("regexp match failed,  2019.1107.1115.51")

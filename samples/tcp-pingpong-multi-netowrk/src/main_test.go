@@ -32,5 +32,5 @@ func TestTcpEchoServer(t *testing.T) {
 	os.Args = []string{"main", "eth1:9001", "eth0:20001", " 192.168.56.10:9000"}
 	go main()
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(1 * time.Minute)
 }

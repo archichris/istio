@@ -20,8 +20,6 @@ import (
 	"strings"
 	"time"
 
-	// "github.com/go-chassis/go-chassis/core/config"
-	// "github.com/go-chassis/go-chassis/core/registry/servicecenter"
 	"net/url"
 
 	client "github.com/go-chassis/go-chassis/pkg/scclient"
