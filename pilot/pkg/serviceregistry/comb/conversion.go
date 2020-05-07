@@ -30,12 +30,9 @@ import (
 )
 
 const (
-	// protocolTagName  = "protocol"
-	// externalTagName  = "external"
 	defaultPlaneName = "default"
 	extPlanePrefix   = "extPlane_"
 	extEpSep         = ";"
-	// extProtoAddrSep  = "://"
 )
 
 func parseEndpoint(endpoint string) (addr, port string, ssl bool) {
